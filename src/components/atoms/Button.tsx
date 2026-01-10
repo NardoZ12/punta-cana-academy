@@ -6,13 +6,15 @@ interface ButtonProps {
   onClick?: () => void;
   variant?: 'primary' | 'secondary' | 'outline';
   fullWidth?: boolean;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 export const Button = ({ 
   children, 
   onClick, 
   variant = 'primary', 
-  fullWidth = false 
+  fullWidth = false,
+  type = 'button'
 }: ButtonProps) => {
   
   // Estilos base que siempre tendrá el botón
@@ -27,6 +29,7 @@ export const Button = ({
 
   return (
     <button 
+      type={type}
       onClick={onClick}
       className={`${baseStyles} ${variants[variant]} ${fullWidth ? 'w-full' : ''}`}
     >

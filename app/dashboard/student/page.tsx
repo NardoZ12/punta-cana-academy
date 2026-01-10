@@ -1,37 +1,40 @@
 // src/app/dashboard/student/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Agregamos useEffect
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/atoms/Button';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // Para redirigir si no hay usuario
+import { createClient } from '@/utils/supabase/client'; // Tu cliente de Supabase
 
 // DATOS DE EJEMPLO (Simulando tu Base de Datos del Nivel A1)
+// NOTA: Esto sigue siendo simulado por ahora, pronto lo conectaremos a la DB real
 const currentLevel = {
   code: "A1",
   title: "The Foundations",
-  progress: 15, // Porcentaje completado
+  progress: 15,
   modules: [
     {
       id: 1,
       title: "Module 1: First Steps",
       topics: ["Greetings & Introductions", "Verb To Be (Affirmative)", "Alphabet & Spelling"],
-      status: "completed", // Ya lo hizo
+      status: "completed",
       score: 100
     },
     {
       id: 2,
       title: "Module 2: Numbers & Time",
       topics: ["Numbers 1-100", "Days of the Week", "Months & Dates"],
-      status: "in-progress", // Aquí está ahora
+      status: "in-progress",
       currentTopic: "Days of the Week"
     },
     {
       id: 3,
       title: "Module 3: My World",
       topics: ["Common Objects", "Plurals (s/es/ies)", "Demonstratives (This/That)"],
-      status: "locked", // Candado
+      status: "locked",
     },
     {
       id: 4,
@@ -44,6 +47,38 @@ const currentLevel = {
 
 export default function StudentDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState<any>(null); // Estado para guardar los datos reales del usuario
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  // EFECTO: Cargar usuario real al entrar
+  useEffect(() => {
+    const getUser = async () => {
+      const supabase = createClient();
+      const { data: { user }, error } = await supabase.auth.getUser();
+
+      if (error || !user) {
+        // Si no hay usuario, mandar al login (Seguridad)
+        router.push('/login');
+      } else {
+        // ¡Tenemos usuario! Lo guardamos en el estado
+        setUser(user);
+        setLoading(false);
+      }
+    };
+
+    getUser();
+  }, [router]);
+
+  // Si está cargando, mostramos una pantalla negra simple para evitar parpadeos
+  if (loading) {
+    return <div className="min-h-screen bg-pca-black flex items-center justify-center text-white">Cargando tu academia...</div>;
+  }
+
+  // Extraemos el nombre para mostrar. Si no hay, ponemos "Estudiante".
+  // user_metadata fue lo que guardamos en el registro (full_name)
+  const fullName = user?.user_metadata?.full_name || 'Estudiante';
+  const firstName = fullName.split(' ')[0]; // Toma solo el primer nombre para el saludo (ej: "Nardo")
 
   return (
     <div className="min-h-screen bg-pca-black flex">
@@ -52,7 +87,8 @@ export default function StudentDashboard() {
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-gray-900 border-r border-gray-800 transition-all duration-300 flex flex-col fixed h-full z-20`}>
         <div className="p-6 flex items-center justify-center border-b border-gray-800">
           <div className="relative w-10 h-10">
-            <Image src="/images/logos/logo-pca.png" alt="Logo" fill className="object-contain" />
+            {/* Asegúrate de tener este logo o comenta la línea si da error */}
+            <Image src="/images/logos/logo-pca.png" alt="Logo" fill className="object-contain" /> 
           </div>
           {sidebarOpen && <span className="ml-3 font-bold text-white">PCA Student</span>}
         </div>
@@ -61,7 +97,6 @@ export default function StudentDashboard() {
           {['Mi Curso', 'Calificaciones', 'Recursos', 'Comunidad'].map((item, idx) => (
             <button key={idx} className={`w-full flex items-center p-3 rounded-lg transition-colors ${idx === 0 ? 'bg-pca-blue text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
               <div className="w-6 h-6 bg-white/10 rounded-md flex items-center justify-center mr-3">
-                {/* Icono placeholder */}
                 <span className="text-xs">{item[0]}</span>
               </div>
               {sidebarOpen && <span>{item}</span>}
@@ -69,16 +104,17 @@ export default function StudentDashboard() {
           ))}
         </nav>
 
-        {/* Perfil Miniatura Abajo */}
+        {/* Perfil Miniatura Abajo - DATOS REALES */}
         <div className="p-4 border-t border-gray-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gray-700 overflow-hidden relative">
+               {/* Por ahora dejamos la foto placeholder, luego subiremos reales */}
                <Image src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100" alt="User" fill className="object-cover" />
             </div>
             {sidebarOpen && (
-              <div className="text-sm">
-                <p className="text-white font-bold">Juan Pérez</p>
-                <p className="text-pca-blue text-xs">Estudiante A1</p>
+              <div className="text-sm overflow-hidden">
+                <p className="text-white font-bold truncate">{fullName}</p>
+                <p className="text-pca-blue text-xs truncate w-32">{user?.email}</p>
               </div>
             )}
           </div>
@@ -88,10 +124,10 @@ export default function StudentDashboard() {
       {/* 2. CONTENIDO PRINCIPAL (Derecha) */}
       <main className={`flex-1 p-8 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
         
-        {/* Header de Bienvenida */}
+        {/* Header de Bienvenida - DATOS REALES */}
         <header className="flex justify-between items-end mb-12">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">¡Hola, Juan! 👋</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">¡Hola, {firstName}! 👋</h1>
             <p className="text-gray-400">Continúa aprendiendo donde lo dejaste.</p>
           </div>
           <Button variant="outline" onClick={() => setSidebarOpen(!sidebarOpen)}>
@@ -129,7 +165,6 @@ export default function StudentDashboard() {
               <p className="text-gray-300 text-sm mb-1">Siguiente Lección</p>
               <p className="text-white font-bold text-lg mb-4">Days of the Week</p>
               
-              {/* CONECTAMOS EL LINK AQUÍ */}
               <Link href="/dashboard/student/lesson/days-of-the-week">
                 <Button variant="primary" fullWidth>Continuar ▶</Button>
               </Link>
@@ -137,7 +172,7 @@ export default function StudentDashboard() {
           </div>
         </motion.div>
 
-        {/* Lista de Módulos (El Camino de Aprendizaje) */}
+        {/* Lista de Módulos */}
         <h3 className="text-xl font-bold text-white mb-6">Tu Ruta de Aprendizaje</h3>
         <div className="space-y-4">
           {currentLevel.modules.map((module, index) => (
@@ -175,14 +210,14 @@ export default function StudentDashboard() {
 
                 <div className="hidden md:flex gap-2">
                   {module.status !== 'locked' && (
-                     <Button variant={module.status === 'completed' ? 'outline' : 'primary'}>
-                       {module.status === 'completed' ? 'Repasar' : 'Entrar'}
-                     </Button>
+                      <Button variant={module.status === 'completed' ? 'outline' : 'primary'}>
+                        {module.status === 'completed' ? 'Repasar' : 'Entrar'}
+                      </Button>
                   )}
                 </div>
               </div>
 
-              {/* Lista de temas (visible si no está bloqueado) */}
+              {/* Lista de temas */}
               {module.status !== 'locked' && (
                 <div className="mt-4 pl-14 space-y-2 border-l-2 border-gray-800 ml-5">
                   {module.topics.map((topic, i) => (

@@ -70,32 +70,32 @@ export const Navbar = () => {
 
       {/* MENÚ MÓVIL DESPLEGABLE */}
       {isMenuOpen && (
-        <div className="md:hidden absolute top-20 left-0 w-full bg-pca-black border-b border-gray-800 shadow-lg">
-          <div className="flex flex-col p-4 space-y-4">
+        <div className="md:hidden absolute top-20 left-0 w-full bg-black border-b border-gray-800 shadow-xl z-50">
+          <div className="flex flex-col p-4 space-y-4 bg-black">
             <Link 
               href="/cursos" 
-              className="text-gray-300 hover:text-pca-blue transition-colors py-2 px-4 rounded-lg hover:bg-gray-800"
+              className="text-white hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800 font-medium"
               onClick={closeMenu}
             >
               Cursos
             </Link>
             <Link 
               href="/nosotros" 
-              className="text-gray-300 hover:text-pca-blue transition-colors py-2 px-4 rounded-lg hover:bg-gray-800"
+              className="text-white hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800 font-medium"
               onClick={closeMenu}
             >
               Nosotros
             </Link>
             <Link 
               href="/contacto" 
-              className="text-gray-300 hover:text-pca-blue transition-colors py-2 px-4 rounded-lg hover:bg-gray-800"
+              className="text-white hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800 font-medium"
               onClick={closeMenu}
             >
               Contacto
             </Link>
             <Link 
               href="/login" 
-              className="text-white font-medium hover:text-pca-blue transition-colors py-2 px-4 rounded-lg hover:bg-gray-800"
+              className="text-white font-medium hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800"
               onClick={closeMenu}
             >
               Ingresar

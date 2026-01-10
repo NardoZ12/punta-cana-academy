@@ -13,7 +13,7 @@ const allCourses = [
     title: "Inglés Intensivo para el Trabajo",
     category: "Idiomas",
     image: "https://images.unsplash.com/photo-1543269865-cbf427effbad?q=80&w=800&auto=format&fit=crop", 
-    mode: "Híbrido" as const, // "as const" es un truco de TypeScript para textos fijos
+    mode: "Híbrido" as const,
     level: "Principiante - Avanzado",
     price: "$49 USD/mes"
   },
@@ -27,7 +27,7 @@ const allCourses = [
     price: "$199 USD"
   },
   {
-    slug: 'frances-hoteleria', // Agregué un slug para que no de error
+    slug: 'frances-hoteleria',
     title: "Francés para Hotelería",
     category: "Idiomas",
     image: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=800&auto=format&fit=crop",

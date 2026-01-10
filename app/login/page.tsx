@@ -1,133 +1,115 @@
-// src/app/login/page.tsx
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Button } from '@/components/atoms/Button';
-import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/atoms/Button';
+import { createClient } from '@/utils/supabase/client';
 
 export default function LoginPage() {
-  const [role, setRole] = useState<'student' | 'teacher'>('student');
   const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault(); // Evita que la página se recargue
-    
-    // Simulamos un login exitoso redirigiendo según el rol
-    if (role === 'student') {
-      router.push('/dashboard/student');
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    const supabase = createClient();
+
+    // Iniciar sesión con Supabase
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError('Correo o contraseña incorrectos');
+      setIsLoading(false);
     } else {
-      router.push('/dashboard/teacher');
+      // ¡Éxito! Redirigir al dashboard
+      router.push('/dashboard/student');
+      router.refresh();
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-pca-black p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-pca-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       
-      {/* Fondo Decorativo */}
-      <div className="absolute inset-0 z-0">
-        <Image 
-          src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=2000"
-          alt="Background" 
-          fill 
-          className="object-cover opacity-20 blur-sm"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-pca-black via-pca-black/80 to-pca-black/60" />
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <Link href="/" className="text-3xl font-bold text-white tracking-wider mb-6 inline-block">
+          PCA
+        </Link>
+        <h2 className="text-3xl font-extrabold text-white">
+          Inicia Sesión
+        </h2>
+        <p className="mt-2 text-sm text-gray-400">
+          ¿No tienes cuenta?{' '}
+          <Link href="/registro" className="font-medium text-pca-blue hover:text-white transition-colors">
+            Regístrate gratis
+          </Link>
+        </p>
       </div>
 
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-gray-900/90 backdrop-blur-xl p-8 rounded-2xl border border-gray-800 shadow-2xl relative z-10"
-      >
-        {/* Header del Login */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block mb-4">
-            <div className="relative w-20 h-20 mx-auto">
-               <Image src="/images/logos/logo-pca.png" alt="PCA Logo" fill className="object-contain" />
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-gray-900 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10 border border-gray-800">
+          
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            
+            {error && (
+              <div className="bg-red-500/10 border border-red-500 text-red-500 text-sm p-3 rounded">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-300">
+                Correo Electrónico
+              </label>
+              <div className="mt-1">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
             </div>
-          </Link>
-          <h1 className="text-2xl font-bold text-white">Bienvenido de nuevo</h1>
-          <p className="text-gray-400 text-sm mt-2">Ingresa a tu plataforma educativa</p>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-300">
+                Contraseña
+              </label>
+              <div className="mt-1">
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Button variant="primary" fullWidth disabled={isLoading} type="submit">
+                {isLoading ? 'Entrando...' : 'Iniciar Sesión'}
+              </Button>
+            </div>
+          </form>
+
         </div>
-
-        {/* Selector de Rol (Estudiante vs Profesor) */}
-        <div className="flex p-1 bg-gray-800 rounded-lg mb-8">
-          <button
-            onClick={() => setRole('student')}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
-              role === 'student' 
-                ? 'bg-pca-blue text-white shadow-md' 
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            Soy Estudiante
-          </button>
-          <button
-            onClick={() => setRole('teacher')}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
-              role === 'teacher' 
-                ? 'bg-white text-pca-black shadow-md' 
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            Soy Profesor
-          </button>
-        </div>
-
-        {/* Formulario */}
-        <form className="space-y-5" onSubmit={handleLogin}>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1 uppercase">
-              {role === 'student' ? 'Correo institucional o personal' : 'Correo de docente'}
-            </label>
-            <input 
-              type="email" 
-              placeholder="nombre@ejemplo.com"
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1 uppercase">
-              Contraseña
-            </label>
-            <input 
-              type="password" 
-              placeholder="••••••••"
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none transition-all"
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="rounded border-gray-700 bg-gray-800 text-pca-blue focus:ring-pca-blue" />
-              <span className="text-gray-400">Recordarme</span>
-            </label>
-            <Link href="#" className="text-pca-blue hover:underline">
-              ¿Olvidaste tu contraseña?
-            </Link>
-          </div>
-
-          <Button 
-            variant={role === 'student' ? 'primary' : 'secondary'} 
-            fullWidth 
-            type="submit"
-          >
-            {role === 'student' ? 'Entrar al Aula Virtual' : 'Acceder al Panel Docente'}
-          </Button>
-        </form>
-
-        {/* Footer del Login */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          ¿No tienes una cuenta?{' '}
-          <Link href="/contacto" className="text-white hover:text-pca-blue font-medium transition-colors">
-            Contacta a Admisiones
-          </Link>
-        </div>
-      </motion.div>
-    </main>
+      </div>
+    </div>
   );
 }

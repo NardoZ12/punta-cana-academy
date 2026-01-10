@@ -1,108 +1,205 @@
-// src/app/(website)/registro/page.tsx
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/atoms/Button';
-import { motion } from 'framer-motion';
+import { createClient } from '@/utils/supabase/client'; // Importamos tu nuevo cliente
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    
+    // PRUEBA INICIAL - Solo para ver si la función se ejecuta
+    console.log('🚀 FUNCIÓN EJECUTADA!');
+    alert('La función se ejecutó - paso 1');
+    
+    setError('');
+    setIsLoading(true);
 
-    // Simulamos una petición al servidor (2 segundos)
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setIsSuccess(true);
+    console.log('🔍 Iniciando registro con datos:', {
+      email: formData.email,
+      fullName: formData.fullName,
+      passwordLength: formData.password.length
+    });
 
-      // Redirigimos al Dashboard después de mostrar el éxito
-      setTimeout(() => {
-        router.push('/dashboard/student');
-      }, 2000);
-    }, 1500);
+    // 1. Validaciones básicas
+    if (!formData.email || !formData.password || !formData.fullName) {
+      setError('Por favor, llena todos los campos');
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Las contraseñas no coinciden');
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 2. CONEXIÓN REAL CON SUPABASE
+      console.log('🔗 Creando cliente de Supabase...');
+      const supabase = createClient();
+      
+      console.log('📧 Enviando datos a Supabase...');
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName,
+          },
+        },
+      });
+
+      console.log('📋 Respuesta de Supabase:', { data, error: signUpError });
+
+      if (signUpError) {
+        console.error('❌ Error de Supabase:', signUpError);
+        setError(signUpError.message);
+        setIsLoading(false);
+      } else {
+        console.log('✅ Registro exitoso!');
+        alert('¡Cuenta creada! Revisa tu correo para confirmar (si está activado) o inicia sesión.');
+        router.push('/dashboard/student'); 
+      }
+    } catch (error) {
+      console.error('💥 Error inesperado:', error);
+      setError('Error inesperado. Por favor, intenta de nuevo.');
+      setIsLoading(false);
+    }
   };
 
-  if (isSuccess) {
-    return (
-      <main className="min-h-screen bg-pca-black flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="bg-gray-900 p-8 rounded-2xl border border-green-500/50 text-center max-w-md w-full"
-        >
-          <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-          </div>
-          <h2 className="text-3xl font-bold text-white mb-2">¡Registro Completado!</h2>
-          <p className="text-gray-400 mb-6">Bienvenido a Punta Cana Academy. Te estamos redirigiendo a tu aula virtual...</p>
-          <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-            <motion.div 
-              initial={{ width: "0%" }}
-              animate={{ width: "100%" }}
-              transition={{ duration: 2 }}
-              className="h-full bg-green-500"
-            />
-          </div>
-        </motion.div>
-      </main>
-    );
-  }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
 
   return (
-    <main className="min-h-screen bg-pca-black pt-20 pb-20 px-4 flex items-center justify-center">
-      <div className="w-full max-w-2xl">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-white mb-4">Comienza tu viaje hoy</h1>
-          <p className="text-gray-400">Completa el formulario para crear tu perfil de estudiante.</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-2xl space-y-6">
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Nombre Completo</label>
-              <input required type="text" placeholder="Ej. Juan Pérez" className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Teléfono / WhatsApp</label>
-              <input required type="tel" placeholder="Ej. 809-555-5555" className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none" />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-300">Correo Electrónico</label>
-            <input required type="email" placeholder="juan@ejemplo.com" className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none" />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-300">Curso de Interés</label>
-            <select className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none">
-              <option>Inglés Intensivo (A1-C2)</option>
-              <option>Desarrollo Web Full Stack</option>
-              <option>Francés para Hotelería</option>
-              <option>Otro / No estoy seguro</option>
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-300">Contraseña para tu cuenta</label>
-            <input required type="password" placeholder="Crea una contraseña segura" className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-pca-blue outline-none" />
-          </div>
-
-          <Button variant="primary" fullWidth type="submit">
-            {isSubmitting ? 'Procesando...' : 'Completar Inscripción'}
-          </Button>
-          
-          <p className="text-center text-xs text-gray-500 mt-4">
-            Al registrarte aceptas nuestros Términos de Servicio y Política de Privacidad.
-          </p>
-        </form>
+    <div className="min-h-screen bg-pca-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <Link href="/" className="text-3xl font-bold text-white tracking-wider mb-6 inline-block">
+          PCA
+        </Link>
+        <h2 className="text-3xl font-extrabold text-white">
+          Crea tu cuenta
+        </h2>
+        <p className="mt-2 text-sm text-gray-400">
+          ¿Ya eres estudiante?{' '}
+          <Link href="/login" className="font-medium text-pca-blue hover:text-white transition-colors">
+            Inicia sesión aquí
+          </Link>
+        </p>
       </div>
-    </main>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-gray-900 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10 border border-gray-800">
+          
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            
+            {error && (
+              <div className="bg-red-500/10 border border-red-500 text-red-500 text-sm p-3 rounded">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="fullName" className="block text-sm font-medium text-gray-300">
+                Nombre Completo
+              </label>
+              <div className="mt-1">
+                <input
+                  id="fullName"
+                  name="fullName"
+                  type="text"
+                  required
+                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
+                  value={formData.fullName}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-300">
+                Correo Electrónico
+              </label>
+              <div className="mt-1">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
+                  value={formData.email}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-300">
+                Contraseña
+              </label>
+              <div className="mt-1">
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
+                  value={formData.password}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300">
+                Confirmar Contraseña
+              </label>
+              <div className="mt-1">
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Button variant="primary" fullWidth disabled={isLoading} type="submit">
+                {isLoading ? 'Creando cuenta...' : 'Registrarse'}
+              </Button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+    </div>
   );
 }

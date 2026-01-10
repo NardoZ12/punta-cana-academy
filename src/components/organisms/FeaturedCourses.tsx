@@ -43,7 +43,7 @@ export const FeaturedCourses = () => {
       <div className="max-w-7xl mx-auto px-4">
         
         {/* Encabezado de sección */}
-        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6 relative">
           <motion.div 
             initial={{ opacity: 0, x: -50 }}
             whileInView={{ opacity: 1, x: 0 }}
@@ -61,8 +61,11 @@ export const FeaturedCourses = () => {
              whileInView={{ opacity: 1, x: 0 }}
              viewport={{ once: true }}
              transition={{ duration: 0.6, delay: 0.2 }}
+             className="relative z-20 touch-auto"
           >
-            <Button variant="secondary">Ver todos los cursos</Button>
+            <Link href="/cursos">
+              <Button variant="secondary">Ver todos los cursos</Button>
+            </Link>
           </motion.div>
         </div>
 

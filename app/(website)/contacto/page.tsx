@@ -1,4 +1,4 @@
-// app/contacto/page.tsx
+// app/contacto/page.tsx 
 import { ContactForm } from '@/components/organisms/ContactForm';
 
 export default function ContactPage() {

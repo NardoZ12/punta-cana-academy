@@ -70,7 +70,7 @@ export const Navbar = () => {
 
       {/* MENÚ MÓVIL DESPLEGABLE */}
       {isMenuOpen && (
-        <div className="md:hidden absolute top-20 left-0 w-full bg-pca-black/95 backdrop-blur-md border-b border-gray-800 shadow-lg">
+        <div className="md:hidden absolute top-20 left-0 w-full bg-pca-black border-b border-gray-800 shadow-lg">
           <div className="flex flex-col p-4 space-y-4">
             <Link 
               href="/cursos" 

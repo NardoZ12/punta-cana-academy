@@ -25,31 +25,31 @@ export const CourseHero = ({ title, description, image, price, duration, modalit
 
       {/* CONTENIDO CON BACKDROP BLUR */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 w-full">
-        <div className="max-w-2xl">
-          {/* Contenedor con fondo difuminado */}
-          <div className="backdrop-blur-sm bg-black/20 p-8 rounded-2xl border border-white/10">
+        <div className="max-w-lg md:max-w-2xl">
+          {/* Contenedor con fondo difuminado - Ajustado para móvil */}
+          <div className="backdrop-blur-sm bg-black/20 p-4 md:p-8 rounded-xl md:rounded-2xl border border-white/10">
             <span className="inline-block bg-pca-blue text-white text-sm font-bold px-3 py-1 rounded-full mb-4">
               {modality}
             </span>
-            <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight drop-shadow-lg">
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white mb-4 md:mb-6 leading-tight drop-shadow-lg">
               {title}
             </h1>
-            <p className="text-gray-100 text-xl mb-8 leading-relaxed drop-shadow-md">
+            <p className="text-gray-100 text-lg md:text-xl mb-6 md:mb-8 leading-relaxed drop-shadow-md">
               {description}
             </p>
             
-            <div className="flex flex-wrap gap-6 mb-8 text-white font-medium">
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg backdrop-blur-sm">
-                <svg className="w-5 h-5 text-pca-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <div className="flex flex-wrap gap-3 md:gap-6 mb-6 md:mb-8 text-white font-medium">
+              <div className="flex items-center gap-2 bg-white/10 px-2 py-1 md:px-3 md:py-2 rounded-lg backdrop-blur-sm text-sm md:text-base">
+                <svg className="w-4 h-4 md:w-5 md:h-5 text-pca-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <span>{duration}</span>
               </div>
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg backdrop-blur-sm">
-                <svg className="w-5 h-5 text-pca-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <div className="flex items-center gap-2 bg-white/10 px-2 py-1 md:px-3 md:py-2 rounded-lg backdrop-blur-sm text-sm md:text-base">
+                <svg className="w-4 h-4 md:w-5 md:h-5 text-pca-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <span>{price}</span>
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
               <Button variant="primary">Inscribirme Ahora</Button>
               <Button variant="outline">Descargar Temario</Button>
             </div>

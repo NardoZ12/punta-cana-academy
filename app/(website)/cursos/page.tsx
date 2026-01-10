@@ -31,7 +31,7 @@ const allCourses = [
     title: "Francés para Hotelería",
     category: "Idiomas",
     image: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=800&auto=format&fit=crop",
-    mode: "Presencial (Friusa)" as const,
+    mode: "Presencial" as const,
     level: "Intermedio",
     price: "$59 USD/mes"
   }

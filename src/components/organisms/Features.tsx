@@ -34,40 +34,6 @@ const features = [
   }
 ];
 
-// --- DEFINICIÓN DE LAS ANIMACIONES ---
-
-// Animación para que los elementos aparezcan de abajo hacia arriba suavemente
-const fadeInUp = {
-  hidden: { opacity: 0, y: 60 },
-  visible: { 
-    opacity: 1, 
-    y: 0,
-    transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
-};
-
-// Animación para el contenedor de las tarjetas (controla el orden de aparición)
-const staggerContainer = {
-  hidden: { opacity: 1 },
-  visible: {
-    opacity: 1,
-    transition: {
-      delayChildren: 0.3, // Espera un poco después del título
-      staggerChildren: 0.2 // Cada tarjeta aparece 0.2s después de la anterior
-    }
-  }
-};
-
-// Pequeño "pop" para el ícono
-const iconPop = {
-  hidden: { scale: 0.5, opacity: 0 },
-  visible: { 
-    scale: 1, 
-    opacity: 1,
-    transition: { type: "spring", stiffness: 260, damping: 20, delay: 0.1 } 
-  }
-};
-
 export const Features = () => {
   return (
     <section className="py-24 bg-black relative overflow-hidden">
@@ -85,13 +51,13 @@ export const Features = () => {
       
       <div className="max-w-7xl mx-auto px-4 relative z-10">
         
-        {/* TÍTULO ANIMADO */}
+        {/* TÍTULO SIMPLE SIN ANIMACIÓN PROBLEMÁTICA */}
         <motion.div 
           className="text-center mb-16"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.5 }}
-          variants={fadeInUp}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          viewport={{ once: true }}
         >
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
             ¿Por qué <span className="text-cyan-400">Punta Cana Academy?</span>
@@ -101,23 +67,23 @@ export const Features = () => {
           </p>
         </motion.div>
 
-        {/* GRID DE TARJETAS ANIMADAS EN CASCADA */}
-        <motion.div 
-          className="grid grid-cols-1 md:grid-cols-3 gap-8"
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-        >
+        {/* GRID DE TARJETAS CON ANIMACIÓN SIMPLE */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {features.map((feature, index) => (
             <motion.div 
               key={index}
-              variants={fadeInUp} // Cada tarjeta hereda la animación de subir
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+              viewport={{ once: true }}
               className="group p-8 rounded-2xl bg-gray-900/50 border border-gray-800 hover:border-cyan-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-400/10 hover:-translate-y-1 relative"
             >
-              {/* ÍCONO CON EFECTO POP */}
+              {/* ÍCONO CON EFECTO SIMPLE */}
               <motion.div 
-                variants={iconPop}
+                initial={{ scale: 0.8, opacity: 0 }}
+                whileInView={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3, delay: index * 0.1 + 0.2 }}
+                viewport={{ once: true }}
                 className="w-14 h-14 bg-cyan-500 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-cyan-500/20 relative z-10"
               >
                 {feature.icon}
@@ -131,7 +97,7 @@ export const Features = () => {
               </p>
             </motion.div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );

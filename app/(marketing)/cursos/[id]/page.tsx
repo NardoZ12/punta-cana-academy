@@ -143,7 +143,7 @@ export default function CourseDetailsPage() {
              
              {isEnrolled ? (
                <Link href="/dashboard/student" className="w-full md:w-auto">
-                 <Button variant="secondary" size="lg" className="w-full md:w-auto rounded-xl md:rounded-full px-6 md:px-8 py-3 md:py-4 text-sm md:text-lg bg-green-600 hover:bg-green-700 text-white border-none font-medium">
+                 <Button variant="secondary" className="w-full md:w-auto rounded-xl md:rounded-full px-6 md:px-8 py-3 md:py-4 text-sm md:text-lg bg-green-600 hover:bg-green-700 text-white border-none font-medium">
                    ✅ Ya inscrito - Ir a Clases
                  </Button>
                </Link>
@@ -152,7 +152,6 @@ export default function CourseDetailsPage() {
                  onClick={handleEnroll} 
                  disabled={enrolling}
                  variant="primary" 
-                 size="lg" 
                  className="w-full md:w-auto rounded-xl md:rounded-full px-6 md:px-8 py-3 md:py-4 text-sm md:text-lg shadow-lg hover:shadow-cyan-500/50 transition-all transform hover:-translate-y-1 font-medium"
                >
                  {enrolling ? 'Procesando...' : '¡Inscríbete GRATIS ahora!'}

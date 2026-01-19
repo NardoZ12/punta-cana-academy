@@ -1,8 +1,11 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server'; // Asegúrate de tener configurado el cliente de servidor
 
+// Esta página necesita ser dinámica porque usa autenticación de servidor
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardTrafficCop() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Verificamos si hay usuario conectado
   const { data: { user } } = await supabase.auth.getUser();

@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
 // Esta página necesita ser dinámica porque usa parámetros de búsqueda y autenticación
 export const dynamic = 'force-dynamic';
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -159,5 +159,41 @@ export default function AuthCallbackPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Componente de carga para Suspense
+function LoadingComponent() {
+  return (
+    <div className="min-h-screen bg-pca-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-gray-900 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10 border border-gray-800">
+          <div className="text-center space-y-6">
+            <div className="text-3xl font-bold text-white tracking-wider mb-6">
+              PCA
+            </div>
+            <div className="flex justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-white mb-2">
+                Cargando...
+              </h2>
+              <p className="text-sm text-blue-400">
+                Preparando verificación de email
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<LoadingComponent />}>
+      <AuthCallbackContent />
+    </Suspense>
   );
 }

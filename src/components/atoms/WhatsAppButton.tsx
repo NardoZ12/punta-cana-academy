@@ -10,7 +10,7 @@ interface WhatsAppButtonProps {
 }
 
 export const WhatsAppButton = ({ 
-  phoneNumber = "+18092345678", // Número por defecto para República Dominicana
+  phoneNumber = "+18099631185", // Número actualizado para República Dominicana
   message = "¡Hola! 👋 Me interesa obtener más información sobre los cursos de Punta Cana Academy. ¿Podrían ayudarme con información sobre:\n\n• Cursos disponibles\n• Precios y modalidades\n• Fechas de inicio\n• Certificaciones\n\n¡Gracias!",
   className = ""
 }: WhatsAppButtonProps) => {

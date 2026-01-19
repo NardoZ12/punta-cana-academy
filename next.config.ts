@@ -18,11 +18,8 @@ const nextConfig: NextConfig = {
     // tu proyecto tiene errores de tipo.
     ignoreBuildErrors: true,
   },
-  eslint: {
-    // Advertencia: Esto permite que las compilaciones de producción se completen
-    // incluso si tu proyecto tiene errores de ESLint.
-    ignoreDuringBuilds: true,
-  },
+  // Nota: eslint configuration removida ya que no es soportada en Next.js 16+
+  // Los errores de ESLint se manejan automáticamente durante el build
 };
 
 export default nextConfig;

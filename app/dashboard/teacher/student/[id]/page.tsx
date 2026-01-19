@@ -1,175 +1,153 @@
-// src/app/dashboard/teacher/student/[id]/page.tsx
 'use client';
 
-import { useState } from 'react';
-import Image from 'next/image';
-import { Button } from '@/components/atoms/Button';
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/utils/supabase/client';
+import { Button } from '@/components/atoms/Button';
 
-export default function StudentDetailTeacherView({ params }: { params: { id: string } }) {
-  // DATOS SIMULADOS DE JUAN PÉREZ
-  const student = {
-    name: "Juan Pérez",
-    email: "juan@ejemplo.com",
-    course: "Inglés A1 - The Foundations",
-    avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200",
-    stats: {
-      attendance: "92%",
-      avgScore: 88,
-      completedModules: "2/4"
-    },
-    grades: [
-      { id: 1, activity: "Quiz: Numbers & Time", type: "Automático", score: 95, date: "05 Ene 2026" },
-      { id: 2, activity: "Oral Presentation: Family", type: "Manual", score: 80, date: "08 Ene 2026" },
-    ]
+export default function StudentDetail() {
+  const { id } = useParams(); // Esto captura el ID de la URL
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [student, setStudent] = useState<any>(null);
+  const [enrollment, setEnrollment] = useState<any>(null);
+  const [newGrade, setNewGrade] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function fetchStudentData() {
+      // 1. Si el ID parece un email (error común), intentamos buscar por email
+      const isEmail = (id as string).includes('@');
+      
+      let studentId = id;
+
+      if (isEmail) {
+        // Truco por si la URL llegó con email
+        const { data: userByEmail } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', id)
+          .single();
+        if (userByEmail) studentId = userByEmail.id;
+      }
+
+      // 2. Cargar datos del estudiante
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', studentId)
+        .single();
+
+      // 3. Cargar inscripción y curso
+      // Nota: Traemos la primera inscripción que encontremos para este profe
+      const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('*, courses(*)')
+        .eq('student_id', studentId);
+      
+      if (profile) setStudent(profile);
+      if (enrollments && enrollments.length > 0) {
+        setEnrollment(enrollments[0]); // Tomamos el primer curso activo
+        setNewGrade(enrollments[0].grade || '');
+      }
+      
+      setLoading(false);
+    }
+
+    if (id) fetchStudentData();
+  }, [id]);
+
+  const handleUpdateGrade = async () => {
+    if (!enrollment) return;
+    
+    // 👇 Solo enviamos el 'grade', nada más.
+    const { error } = await supabase
+      .from('enrollments')
+      .update({ 
+        grade: parseFloat(newGrade) 
+      })
+      .eq('id', enrollment.id);
+
+    if (!error) {
+      alert('¡Nota guardada! 💾');
+      // router.refresh(); // Opcional: recargar si quieres ver el cambio reflejado
+    } else {
+      console.error(error); // Para ver el error real si pasa algo
+      alert('Error al guardar');
+    }
   };
 
-  const [isGrading, setIsGrading] = useState(false);
+  if (loading) return <div className="min-h-screen bg-gray-900 text-white p-8">Cargando expediente...</div>;
+  if (!student) return <div className="min-h-screen bg-gray-900 text-white p-8">Estudiante no encontrado.</div>;
 
   return (
-    <div className="min-h-screen bg-pca-black p-8">
-      
-      {/* HEADER DE NAVEGACIÓN */}
-      <div className="mb-8 flex items-center gap-4">
-        <Link href="/dashboard/teacher" className="text-gray-400 hover:text-white transition-colors">
-          ← Volver al Panel
-        </Link>
-        <span className="text-gray-600">/</span>
-        <span className="text-gray-200">Detalle de Estudiante</span>
-      </div>
+    <div className="min-h-screen bg-gray-900 text-white p-8 font-sans">
+      <Link href="/dashboard/teacher" className="text-gray-400 hover:text-white mb-6 inline-block">
+        ← Volver al Panel
+      </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         
-        {/* COLUMNA IZQUIERDA: Perfil */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800 text-center">
-            <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-pca-blue mb-4 relative">
-              <Image src={student.avatar} alt={student.name} fill className="object-cover" />
-            </div>
-            <h1 className="text-2xl font-bold text-white mb-1">{student.name}</h1>
-            <p className="text-gray-400 text-sm mb-4">{student.email}</p>
-            <div className="inline-block px-3 py-1 bg-gray-800 rounded-full text-xs font-bold text-pca-blue border border-gray-700">
-              {student.course}
-            </div>
-            
-            <div className="mt-6 flex justify-center gap-2">
-              <Button variant="outline" fullWidth>Enviar Email</Button>
-              <Button variant="secondary" fullWidth>WhatsApp</Button>
-            </div>
+        {/* TARJETA DE PERFIL */}
+        <div className="bg-black p-8 rounded-2xl border border-gray-800 text-center h-fit">
+          <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-4">
+            {student.full_name?.charAt(0)}
           </div>
-
-          {/* Estadísticas Rápidas */}
-          <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-            <h3 className="text-white font-bold mb-4">Métricas Clave</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                <span className="text-gray-400 text-sm">Asistencia</span>
-                <span className="text-green-400 font-bold">{student.stats.attendance}</span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                <span className="text-gray-400 text-sm">Promedio</span>
-                <span className="text-pca-blue font-bold">{student.stats.avgScore}/100</span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                <span className="text-gray-400 text-sm">Progreso</span>
-                <span className="text-white font-bold">{student.stats.completedModules}</span>
-              </div>
-            </div>
+          <h2 className="text-2xl font-bold">{student.full_name}</h2>
+          <p className="text-gray-400 text-sm mb-6">{student.email}</p>
+          
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 text-left">
+            <p className="text-xs text-gray-500 uppercase font-bold mb-1">Curso Actual</p>
+            <p className="font-medium text-blue-400">{enrollment?.courses?.title || 'Sin curso asignado'}</p>
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: Calificaciones y Acciones */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* ZONA DE CALIFICACIÓN */}
+        <div className="md:col-span-2 space-y-6">
           
-          {/* Tarjeta de Nueva Calificación */}
-          <div className="bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-pca-blue/10 rounded-full blur-3xl"></div>
+          {/* Panel de Progreso */}
+          <div className="bg-black p-8 rounded-2xl border border-gray-800">
+            <h3 className="text-xl font-bold mb-6">Desempeño Académico</h3>
             
-            <div className="flex justify-between items-center mb-6 relative z-10">
-              <h2 className="text-xl font-bold text-white">Centro de Calificaciones</h2>
-              <Button variant="primary" onClick={() => setIsGrading(!isGrading)}>
-                {isGrading ? 'Cancelar' : '+ Nueva Nota'}
-              </Button>
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-gray-900 p-4 rounded-xl">
+                <p className="text-gray-400 text-xs uppercase">Progreso del Curso</p>
+                <p className="text-3xl font-bold mt-1">{enrollment?.progress}%</p>
+                <div className="w-full bg-gray-800 h-1.5 mt-3 rounded-full overflow-hidden">
+                   <div className="bg-blue-500 h-full" style={{width: `${enrollment?.progress}%`}}></div>
+                </div>
+              </div>
+              <div className="bg-gray-900 p-4 rounded-xl">
+                 <p className="text-gray-400 text-xs uppercase">Estado</p>
+                 <span className="inline-block mt-2 px-3 py-1 bg-green-900/30 text-green-400 rounded-full text-sm font-bold border border-green-900">
+                   Activo
+                 </span>
+              </div>
             </div>
 
-            {isGrading && (
-              <div className="bg-gray-800/50 p-6 rounded-xl border border-gray-700 mb-6 animate-fade-in-up">
-                <h3 className="text-white font-bold mb-4">Registrar Evaluación Manual</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">Actividad / Tarea</label>
-                    <input type="text" placeholder="Ej. Exposición Oral" className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white outline-none focus:border-pca-blue" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">Calificación (0-100)</label>
-                    <input type="number" placeholder="90" className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white outline-none focus:border-pca-blue" />
-                  </div>
-                </div>
-                <div className="mb-4">
-                   <label className="text-xs text-gray-400 block mb-1">Feedback para el estudiante</label>
-                   <textarea placeholder="Excelente pronunciación, mejorar entonación..." className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white outline-none focus:border-pca-blue h-20"></textarea>
-                </div>
-                <div className="flex justify-end">
-                  <Button variant="primary" onClick={() => alert('Calificación Guardada')}>Guardar Nota</Button>
-                </div>
+            {/* FORMULARIO DE NOTA */}
+            <div className="border-t border-gray-800 pt-6">
+              <label className="block text-sm font-bold mb-2 text-gray-300">Calificación Final (0-100)</label>
+              <div className="flex gap-4">
+                <input 
+                  type="number" 
+                  max="100"
+                  min="0"
+                  value={newGrade}
+                  onChange={(e) => setNewGrade(e.target.value)}
+                  className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white font-mono text-lg focus:border-blue-500 focus:outline-none w-32"
+                  placeholder="Ej: 95"
+                />
+                <Button onClick={handleUpdateGrade} disabled={saving}>
+                  {saving ? 'Guardando...' : '💾 Guardar Nota'}
+                </Button>
               </div>
-            )}
-
-            {/* Historial de Notas */}
-            <div className="overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="text-gray-500 text-xs uppercase border-b border-gray-800">
-                    <th className="py-3">Fecha</th>
-                    <th className="py-3">Actividad</th>
-                    <th className="py-3">Tipo</th>
-                    <th className="py-3 text-right">Nota</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {student.grades.map(grade => (
-                    <tr key={grade.id} className="text-sm">
-                      <td className="py-4 text-gray-400">{grade.date}</td>
-                      <td className="py-4 text-white font-medium">{grade.activity}</td>
-                      <td className="py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          grade.type === 'Automático' ? 'bg-purple-500/10 text-purple-400' : 'bg-orange-500/10 text-orange-400'
-                        }`}>
-                          {grade.type}
-                        </span>
-                      </td>
-                      <td className="py-4 text-right">
-                        <span className={`font-bold ${grade.score >= 90 ? 'text-green-400' : grade.score >= 70 ? 'text-yellow-400' : 'text-red-400'}`}>
-                          {grade.score}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Progreso del Temario (Vista Profesor) */}
-          <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-            <h3 className="text-white font-bold mb-4">Progreso del Temario</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-black text-xs">✓</div>
-                <span className="text-gray-400 line-through decoration-gray-600">Module 1: First Steps</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-black text-xs">✓</div>
-                <span className="text-gray-400 line-through decoration-gray-600">Module 2: Numbers & Time</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full border-2 border-pca-blue"></div>
-                <span className="text-white font-bold">Module 3: My World (Actual)</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full border-2 border-gray-700"></div>
-                <span className="text-gray-600">Module 4: Family Ties</span>
-              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                * Al guardar, el estudiante verá esta nota en su panel inmediatamente.
+              </p>
             </div>
           </div>
 

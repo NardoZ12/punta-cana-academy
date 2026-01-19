@@ -24,3 +24,49 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Estilos para el banner de verificación de email */
+.email-verification-banner {
+  animation: slideInDown 0.3s ease-out;
+}
+
+@keyframes slideInDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Asegurar que el contenido principal tenga suficiente padding cuando el banner esté presente */
+body:has(.email-verification-banner) {
+  padding-top: 3.5rem; /* Altura aproximada del banner */
+}
+
+/* Alternativa para navegadores que no soportan :has() */
+.body-with-banner {
+  padding-top: 3.5rem;
+}
+
+/* Animaciones para el botón de WhatsApp */
+.animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+@keyframes whatsapp-pulse {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
+.whatsapp-pulse {
+  animation: whatsapp-pulse 2s infinite;
+}

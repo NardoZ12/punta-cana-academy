@@ -1,6 +1,10 @@
-// src/app/layout.tsx
+// src/app/layout.tsx - Root Layout (Neutro)
 import './globals.css';
+import { Inter } from 'next/font/google';
 import Providers from '../src/utils/Providers';
+import { EmailVerificationBanner } from '../src/components/molecules/EmailVerificationBanner';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
   title: 'Punta Cana Academy',
@@ -13,9 +17,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
+    <html lang="es" className={inter.className}>
       <body className="bg-pca-black">
         <Providers>
+          <EmailVerificationBanner />
           {children}
         </Providers>
       </body>

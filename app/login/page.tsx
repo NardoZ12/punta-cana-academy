@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/atoms/Button';
@@ -11,7 +11,16 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Verificar si viene de una verificación exitosa
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('verified') === 'true') {
+      setSuccess('¡Email verificado exitosamente! Ya puedes iniciar sesión.');
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,17 +30,53 @@ export default function LoginPage() {
     const supabase = createClient();
 
     // Iniciar sesión con Supabase
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setError('Correo o contraseña incorrectos');
+      // Verificar si es un error de email no confirmado
+      if (error.message.includes('Email not confirmed') || 
+          error.message.includes('email_not_confirmed') ||
+          error.message.includes('signup_disabled')) {
+        setError('Tu email no ha sido verificado. Serás redirigido para que puedas verificarlo.');
+        setTimeout(() => {
+          router.push(`/verificar-email?email=${encodeURIComponent(email)}`);
+        }, 3000);
+      } else {
+        setError('Correo o contraseña incorrectos');
+      }
       setIsLoading(false);
     } else {
-      // ¡Éxito! Redirigir al dashboard
-      router.push('/dashboard/student');
+      // Verificar si el usuario ha confirmado su email
+      if (data.user && !data.user.email_confirmed_at) {
+        setError('Tu email no ha sido verificado. Serás redirigido para que puedas verificarlo.');
+        setTimeout(() => {
+          router.push(`/verificar-email?email=${encodeURIComponent(email)}`);
+        }, 3000);
+        setIsLoading(false);
+        return;
+      }
+
+      // Obtener el perfil del usuario para saber su tipo
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', user.id)
+          .single();
+        
+        // Redirigir según el tipo de usuario
+        if (profile?.user_type === 'teacher') {
+          router.push('/dashboard/teacher');
+        } else {
+          router.push('/dashboard/student');
+        }
+      } else {
+        router.push('/dashboard/student');
+      }
       router.refresh();
     }
   };
@@ -52,6 +97,12 @@ export default function LoginPage() {
             Regístrate gratis
           </Link>
         </p>
+        <p className="mt-1 text-xs text-gray-500">
+          ¿No has verificado tu email?{' '}
+          <Link href="/verificar-email" className="font-medium text-pca-blue hover:text-white transition-colors">
+            Verificar ahora
+          </Link>
+        </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -59,6 +110,12 @@ export default function LoginPage() {
           
           <form className="space-y-6" onSubmit={handleSubmit}>
             
+            {success && (
+              <div className="bg-green-500/10 border border-green-500 text-green-400 text-sm p-3 rounded">
+                {success}
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-500/10 border border-red-500 text-red-500 text-sm p-3 rounded">
                 {error}

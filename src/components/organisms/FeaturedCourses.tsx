@@ -1,89 +1,72 @@
-// src/components/organisms/FeaturedCourses.tsx
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { CourseCard } from '../molecules/CourseCard';
+import { createClient } from '@/utils/supabase/client';
 import { Button } from '../atoms/Button';
 
-// DATOS DE EJEMPLO (Basados en tu Blueprint)
-const courses = [
-  {
-    slug: 'ingles-intensivo',
-    title: "Inglés Intensivo para el Trabajo",
-    category: "Idiomas",
-    image: "https://images.unsplash.com/photo-1543269865-cbf427effbad?q=80&w=800&auto=format&fit=crop", 
-    mode: "Híbrido" as const,
-    level: "Principiante - Avanzado",
-    price: "$49 USD/mes"
-  },
-  {
-    slug: 'desarrollo-web',
-    title: "Desarrollo Web Full Stack",
-    category: "Tecnología",
-    image: "https://images.unsplash.com/photo-1587620962725-abab7fe55159?q=80&w=800&auto=format&fit=crop",
-    mode: "Online" as const,
-    level: "Bootcamp",
-    price: "$199 USD"
-  },
-  {
-    slug: 'frances-hoteleria',
-    title: "Francés para Hotelería",
-    category: "Idiomas",
-    image: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=800&auto=format&fit=crop",
-    mode: "Presencial" as const,
-    level: "Intermedio",
-    price: "$59 USD/mes"
-  }
-];
-
 export const FeaturedCourses = () => {
+  const supabase = createClient();
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchCourses() {
+      // 1. Buscamos cursos PUBLICADOS en Supabase
+      const { data, error } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (data) setCourses(data);
+      setLoading(false);
+    }
+    fetchCourses();
+  }, []);
+
+  if (loading) return <div className="py-20 text-center text-white">Cargando cursos...</div>;
+
   return (
-    <section className="py-24 bg-pca-black">
-      <div className="max-w-7xl mx-auto px-4">
-        
-        {/* Encabezado de sección */}
-        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6 relative">
-          <motion.div 
-            initial={{ opacity: 0, x: -50 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">
-              Explora nuestros <span className="text-pca-blue">Cursos Populares</span>
-            </h2>
-            <p className="text-gray-400">Fórmate con los mejores estándares internacionales.</p>
-          </motion.div>
-
-          <motion.div
-             initial={{ opacity: 0, x: 50 }}
-             whileInView={{ opacity: 1, x: 0 }}
-             viewport={{ once: true }}
-             transition={{ duration: 0.6, delay: 0.2 }}
-             className="relative z-20 touch-auto"
-          >
-            <Link href="/cursos">
-              <Button variant="secondary">Ver todos los cursos</Button>
-            </Link>
-          </motion.div>
+    <section className="py-20 px-4 bg-black">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <h2 className="text-4xl font-bold text-white mb-4">
+            Cursos <span className="text-cyan-400">Destacados</span>
+          </h2>
+          <p className="text-gray-400">Programas actualizados desde nuestra plataforma.</p>
         </div>
 
-        {/* Grid de Cursos */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {courses.map((course, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 50 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.1 }} // Efecto cascada simple
-            >
-              <CourseCard {...course} />
-            </motion.div>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {courses.length > 0 ? (
+            courses.map((course) => (
+              <div key={course.id} className="bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 hover:border-cyan-500 transition group flex flex-col">
+                {/* Imagen */}
+                <div className="h-48 w-full bg-gray-800 relative">
+                  {course.image_url ? (
+                    <img src={course.image_url} alt={course.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-4xl">📚</div>
+                  )}
+                </div>
+                {/* Texto */}
+                <div className="p-6 flex-1 flex flex-col">
+                  <h3 className="text-xl font-bold text-white mb-2">{course.title}</h3>
+                  <p className="text-gray-400 text-sm mb-4 line-clamp-2">{course.description}</p>
+                  <div className="mt-auto pt-4 border-t border-gray-800 flex justify-between items-center">
+                    <span className="text-lg font-bold text-white">${course.price || '0'}</span>
+                    <Link href="/cursos"><Button variant="outline" size="sm">Ver Detalles</Button></Link>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-3 text-center py-10 border border-dashed border-gray-700 rounded-xl">
+              <p className="text-gray-400">No hay cursos publicados todavía.</p>
+            </div>
+          )}
         </div>
-
       </div>
     </section>
   );

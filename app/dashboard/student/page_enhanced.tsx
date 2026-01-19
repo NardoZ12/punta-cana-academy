@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/atoms/Button';
 import { createClient } from '@/utils/supabase/client';
-import { UserMenu } from '@/components/molecules/UserMenu';
 
 export default function StudentDashboard() {
   const supabase = createClient();
@@ -115,10 +114,9 @@ export default function StudentDashboard() {
             <p className="text-gray-400 mt-2 text-lg">Bienvenido a tu espacio de aprendizaje.</p>
           </div>
           
-          <div className="flex items-center gap-4">
-            {/* Tarjeta de Promedio */}
-            <div className="bg-gray-800/50 p-4 rounded-2xl border border-gray-700 flex items-center gap-4 min-w-[200px]">
-               <div className="p-3 bg-cyan-500/10 rounded-full">
+          {/* Tarjeta de Promedio */}
+          <div className="bg-gray-800/50 p-4 rounded-2xl border border-gray-700 flex items-center gap-4 min-w-[200px]">
+             <div className="p-3 bg-cyan-500/10 rounded-full">
                 <span className="text-2xl">🏆</span>
              </div>
              <div>
@@ -127,10 +125,6 @@ export default function StudentDashboard() {
                   {averageGrade}/100
                 </div>
              </div>
-          </div>
-          
-          {/* User Menu */}
-          <UserMenu userType="student" />
           </div>
         </div>
 

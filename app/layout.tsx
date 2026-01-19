@@ -9,6 +9,11 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata = {
   title: 'Punta Cana Academy',
   description: 'La academia híbrida más moderna del Caribe.',
+  icons: {
+    icon: '/images/logos/favicon.png',
+    shortcut: '/images/logos/favicon.png',
+    apple: '/images/logos/favicon.png',
+  },
 };
 
 export default function RootLayout({

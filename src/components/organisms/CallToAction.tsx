@@ -28,7 +28,14 @@ export const CallToAction = () => {
             </Button>
           </Link>
 
-          <Button variant="outline" onClick={() => console.log('WhatsApp')}>
+          <Button 
+            variant="outline" 
+            onClick={() => {
+              const message = encodeURIComponent("¡Hola! 👋 Me interesa obtener más información sobre los cursos de Punta Cana Academy. ¿Podrían ayudarme con información sobre:\n\n• Cursos disponibles\n• Precios y modalidades\n• Fechas de inicio\n• Certificaciones\n\n¡Gracias!");
+              const whatsappUrl = `https://wa.me/18099631185?text=${message}`;
+              window.open(whatsappUrl, '_blank');
+            }}
+          >
             Contactar por WhatsApp
           </Button>
         </div>

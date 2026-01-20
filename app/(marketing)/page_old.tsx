@@ -99,7 +99,7 @@ export const FeaturedCourses = () => {
                     <div>
                       <span className="text-xs text-gray-500 block">Precio</span>
                       <span className="text-lg font-bold text-green-400">
-                        GRATIS 🎉
+                        Acceso Gratuito 🎉
                       </span>
                     </div>
                     <Link href={`/cursos`}> 

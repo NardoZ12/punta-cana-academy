@@ -58,7 +58,7 @@ export const CourseCard = ({ slug, title, category, image, mode, level, price }:
         <div className="mt-auto flex items-center justify-between border-t border-gray-800 pt-4">
           <div className="flex flex-col">
             <span className="text-xs text-gray-500">Precio</span>
-            <span className="text-xl font-bold text-green-400">GRATIS 🎉</span>
+            <span className="text-lg font-bold text-green-400">Acceso Gratuito 🎉</span>
           </div>
           <Link href={`/cursos/${slug}`}>
             <Button variant="outline">

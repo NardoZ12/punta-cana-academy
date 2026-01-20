@@ -94,12 +94,12 @@ export default function CourseDetailsPage() {
              <div className="text-left">
                <p className="text-xs text-gray-300 uppercase tracking-widest font-semibold">Precio</p>
                <div className="flex items-baseline gap-1">
-                 <span className="text-2xl font-bold text-green-400">GRATIS</span>
+                 <span className="text-xl font-bold text-green-400">Acceso Gratuito</span>
                  <span className="text-sm text-gray-300">🎉</span>
                </div>
              </div>
              <Button variant="primary" size="lg" className="rounded-full px-8 py-4 text-lg shadow-lg hover:shadow-cyan-500/50 transition-all transform hover:-translate-y-1">
-               ¡Inscríbete GRATIS!
+               ¡Acceso Gratuito!
              </Button>
           </div>
         </div>

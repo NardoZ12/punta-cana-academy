@@ -16,7 +16,7 @@ export const CallToAction = () => {
         </h2>
         <p className="text-blue-100 text-xl mb-10 max-w-2xl mx-auto">
           No importa si buscas mejorar tu inglés para un ascenso o aprender a programar. 
-          Tu primera clase de prueba es totalmente gratis.
+          Tu primera clase de prueba es con acceso gratuito a las classroom.
         </p>
         
         <div className="flex flex-col sm:flex-row justify-center gap-4">

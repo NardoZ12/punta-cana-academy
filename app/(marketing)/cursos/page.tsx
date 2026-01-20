@@ -98,8 +98,8 @@ export default function CoursesPage() {
                   <div className="pt-4 border-t border-gray-800 flex items-center justify-between mt-auto">
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Precio</p>
-                      <p className="text-xl font-bold text-green-400">
-                        GRATIS 🎉
+                      <p className="text-lg font-bold text-green-400">
+                        Acceso Gratuito 🎉
                       </p>
                     </div>
                     <Link href={`/cursos/${course.id}`}> {/* Enlace preparado para el futuro detalle */}

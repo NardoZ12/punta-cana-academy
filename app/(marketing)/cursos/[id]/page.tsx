@@ -136,7 +136,7 @@ export default function CourseDetailsPage() {
              <div className="text-center md:text-left">
                <p className="text-xs text-gray-300 uppercase tracking-widest font-semibold">Precio</p>
                <div className="flex items-baseline gap-1 justify-center md:justify-start">
-                 <span className="text-2xl font-bold text-green-400">GRATIS</span>
+                 <span className="text-xl font-bold text-green-400">Acceso Gratuito a Classroom</span>
                  <span className="text-sm text-gray-300">🎉</span>
                </div>
              </div>
@@ -154,7 +154,7 @@ export default function CourseDetailsPage() {
                  variant="primary" 
                  className="w-full md:w-auto rounded-xl md:rounded-full px-6 md:px-8 py-3 md:py-4 text-sm md:text-lg shadow-lg hover:shadow-cyan-500/50 transition-all transform hover:-translate-y-1 font-medium"
                >
-                 {enrolling ? 'Procesando...' : '¡Inscríbete GRATIS ahora!'}
+                 {enrolling ? 'Procesando...' : '¡Acceso Gratuito a Classroom!'}
                </Button>
              )}
           </div>

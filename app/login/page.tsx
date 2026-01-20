@@ -94,7 +94,7 @@ export default function LoginPage() {
         <p className="mt-2 text-sm text-gray-400">
           ¿No tienes cuenta?{' '}
           <Link href="/registro" className="font-medium text-pca-blue hover:text-white transition-colors">
-            Regístrate gratis
+            Regístrate - Acceso Gratuito
           </Link>
         </p>
         <p className="mt-1 text-xs text-gray-500">

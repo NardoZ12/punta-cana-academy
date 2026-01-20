@@ -69,7 +69,7 @@ export const Hero = () => {
             className="flex flex-wrap justify-center gap-6 text-gray-400 text-sm md:text-base"
           >
             <div className="flex items-center gap-2">
-              ✅ <span>100% Gratuito</span>
+              ✅ <span>Acceso 100% Gratuito a las Classroom</span>
             </div>
             <div className="flex items-center gap-2">
               🏨 <span>Enfoque en Turismo</span>
@@ -91,7 +91,7 @@ export const Hero = () => {
           >
             <Link href="/registro">
               <Button variant="primary" fullWidth={false}>
-                🚀 Inscríbete Gratis
+                🚀 Acceso Gratuito a Classroom
               </Button>
             </Link>
             
@@ -107,12 +107,8 @@ export const Hero = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.8 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-8 pt-16 max-w-3xl mx-auto"
+            className="grid grid-cols-3 gap-8 pt-16 max-w-2xl mx-auto"
           >
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-cyan-400">500+</div>
-              <div className="text-gray-400 text-sm">Estudiantes</div>
-            </div>
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold text-cyan-400">95%</div>
               <div className="text-gray-400 text-sm">Satisfacción</div>
@@ -123,7 +119,7 @@ export const Hero = () => {
             </div>
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold text-cyan-400">100%</div>
-              <div className="text-gray-400 text-sm">Gratis</div>
+              <div className="text-gray-400 text-sm">Acceso Gratuito</div>
             </div>
           </motion.div>
         </div>

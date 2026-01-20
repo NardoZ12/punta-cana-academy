@@ -27,6 +27,8 @@ export default function EditCoursePage() {
   const [newModuleTitle, setNewModuleTitle] = useState('');
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [addingLessonToModuleId, setAddingLessonToModuleId] = useState<string | null>(null);
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+  const [editingModuleTitle, setEditingModuleTitle] = useState('');
 
   const [formData, setFormData] = useState({
     title: '', description: '', price: '', level: '', modality: '', schedule: '', 
@@ -120,6 +122,47 @@ export default function EditCoursePage() {
     if (!error) { setNewModuleTitle(''); fetchCourseData(); }
   };
 
+  const handleDeleteModule = async (moduleId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este módulo? Esto también eliminará todas las lecciones asociadas.')) return;
+    
+    // Primero eliminar todas las lecciones del módulo
+    const { error: lessonsError } = await supabase
+      .from('course_lessons')
+      .delete()
+      .eq('module_id', moduleId);
+
+    if (lessonsError) {
+      alert('Error eliminando lecciones: ' + lessonsError.message);
+      return;
+    }
+
+    // Luego eliminar el módulo
+    const { error: moduleError } = await supabase
+      .from('course_modules')
+      .delete()
+      .eq('id', moduleId);
+
+    if (moduleError) {
+      alert('Error eliminando módulo: ' + moduleError.message);
+    } else {
+      alert('Módulo eliminado correctamente');
+      fetchCourseData();
+    }
+  };
+
+  const handleEditModuleTitle = async (moduleId: string, newTitle: string) => {
+    const { error } = await supabase
+      .from('course_modules')
+      .update({ title: newTitle })
+      .eq('id', moduleId);
+
+    if (error) {
+      alert('Error actualizando módulo: ' + error.message);
+    } else {
+      fetchCourseData();
+    }
+  };
+
   // --- FUNCIONES LECCIONES ---
   const handleAddLesson = async (moduleId: string) => {
     if (!newLessonTitle.trim()) return;
@@ -130,6 +173,22 @@ export default function EditCoursePage() {
       module_id: moduleId, title: newLessonTitle, sort_order: order
     });
     if (!error) { setNewLessonTitle(''); setAddingLessonToModuleId(null); fetchCourseData(); }
+  };
+
+  const handleDeleteLesson = async (lessonId: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta lección?')) return;
+    
+    const { error } = await supabase
+      .from('course_lessons')
+      .delete()
+      .eq('id', lessonId);
+
+    if (error) {
+      alert('Error eliminando lección: ' + error.message);
+    } else {
+      alert('Lección eliminada correctamente');
+      fetchCourseData();
+    }
   };
 
   // --- NUEVO: GUARDAR EDICIÓN DE LECCIÓN (VIDEO) ---
@@ -219,7 +278,59 @@ export default function EditCoursePage() {
           <div className="max-w-4xl mx-auto space-y-6">
              {modules.map((module) => (
                <div key={module.id} className="bg-gray-900 p-4 rounded-xl border border-gray-700">
-                 <h3 className="font-bold text-lg mb-3">{module.title}</h3>
+                 <div className="flex justify-between items-center mb-3">
+                   {editingModuleId === module.id ? (
+                     <div className="flex gap-2 flex-1">
+                       <input 
+                         value={editingModuleTitle}
+                         onChange={(e) => setEditingModuleTitle(e.target.value)}
+                         className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1 text-lg font-bold"
+                         onKeyPress={(e) => {
+                           if (e.key === 'Enter') {
+                             handleEditModuleTitle(module.id, editingModuleTitle);
+                             setEditingModuleId(null);
+                           }
+                         }}
+                       />
+                       <button 
+                         onClick={() => {
+                           handleEditModuleTitle(module.id, editingModuleTitle);
+                           setEditingModuleId(null);
+                         }}
+                         className="text-green-400 hover:text-green-300 px-2"
+                       >
+                         ✅
+                       </button>
+                       <button 
+                         onClick={() => setEditingModuleId(null)}
+                         className="text-red-400 hover:text-red-300 px-2"
+                       >
+                         ❌
+                       </button>
+                     </div>
+                   ) : (
+                     <>
+                       <h3 className="font-bold text-lg">{module.title}</h3>
+                       <div className="flex gap-2">
+                         <button 
+                           onClick={() => {
+                             setEditingModuleId(module.id);
+                             setEditingModuleTitle(module.title);
+                           }}
+                           className="text-gray-400 hover:text-cyan-400 text-sm px-2 py-1 rounded border border-gray-700"
+                         >
+                           ✏️ Editar
+                         </button>
+                         <button 
+                           onClick={() => handleDeleteModule(module.id)}
+                           className="text-gray-400 hover:text-red-400 text-sm px-2 py-1 rounded border border-gray-700"
+                         >
+                           🗑️ Eliminar
+                         </button>
+                       </div>
+                     </>
+                   )}
+                 </div>
                  <div className="space-y-2">
                     {module.course_lessons.map((lesson: any) => (
                       <div key={lesson.id} className="flex justify-between items-center bg-black/40 p-3 rounded border border-gray-800 hover:border-gray-600 transition">
@@ -228,12 +339,20 @@ export default function EditCoursePage() {
                             <span>{lesson.title}</span>
                             {lesson.video_url && <span className="text-xs bg-green-900 text-green-300 px-2 rounded">Video OK</span>}
                          </div>
-                         <button 
-                           onClick={() => openLessonModal(lesson)}
-                           className="text-xs bg-gray-800 hover:bg-cyan-900 text-cyan-400 border border-gray-700 px-3 py-1.5 rounded transition"
-                         >
-                           ⚙️ Configurar
-                         </button>
+                         <div className="flex gap-2">
+                           <button 
+                             onClick={() => openLessonModal(lesson)}
+                             className="text-xs bg-gray-800 hover:bg-cyan-900 text-cyan-400 border border-gray-700 px-3 py-1.5 rounded transition"
+                           >
+                             ⚙️ Configurar
+                           </button>
+                           <button 
+                             onClick={() => handleDeleteLesson(lesson.id)}
+                             className="text-xs bg-gray-800 hover:bg-red-900 text-red-400 border border-gray-700 px-3 py-1.5 rounded transition"
+                           >
+                             🗑️ Eliminar
+                           </button>
+                         </div>
                       </div>
                     ))}
                  </div>

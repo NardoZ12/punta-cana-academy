@@ -82,11 +82,10 @@ export default function AboutPage() {
           <p className="text-gray-400">Profesionales apasionados por enseñar.</p>
         </div>
 
-        <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-8 justify-center">
           {[
-            { name: "Nardo Zorrilla", role: "Director & Fundador", img: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=400" },
-            { name: "Ana Martínez", role: "Head Teacher Inglés", img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=400" },
-            { name: "David Chen", role: "Lead Instructor Tech", img: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?q=80&w=400" }
+            { name: "Nardo Zorrilla", role: "Fundador", img: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=400" },
+            { name: "Nephthaly Petit", role: "Directora", img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=400" }
           ].map((member, idx) => (
             <motion.div 
               key={idx}

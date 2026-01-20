@@ -41,6 +41,44 @@ body {
   }
 }
 
+/* Animaciones para modales */
+.animate-in {
+  animation: fadeInZoom 0.3s ease-out;
+}
+
+.fade-in {
+  opacity: 0;
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.zoom-in {
+  transform: scale(0.9);
+  animation: zoomIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeInZoom {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn {
+  to {
+    transform: scale(1);
+  }
+}
+
 /* Asegurar que el contenido principal tenga suficiente padding cuando el banner esté presente */
 body:has(.email-verification-banner) {
   padding-top: 3.5rem; /* Altura aproximada del banner */

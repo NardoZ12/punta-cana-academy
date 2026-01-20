@@ -1,0 +1,153 @@
+import { createClient } from '@/utils/supabase/server';
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ lessonId: string }> }
+) {
+  try {
+    const { lessonId } = await params;
+    const { courseId } = await request.json();
+    
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
+    // Verificar que no esté ya completada
+    const { data: existing } = await supabase
+      .from('lesson_progress')
+      .select('completed')
+      .eq('student_id', user.id)
+      .eq('lesson_id', lessonId)
+      .single();
+
+    if (existing?.completed) {
+      return NextResponse.json({ success: true, message: 'Ya completada' });
+    }
+
+    // Marcar lección como completada
+    await supabase.from('lesson_progress').upsert({
+      student_id: user.id,
+      lesson_id: lessonId,
+      course_id: courseId,
+      completed: true,
+      completed_at: new Date().toISOString()
+    });
+
+    // Actualizar progreso general del curso
+    const { data: totalLessons } = await supabase
+      .from('course_lessons')
+      .select('id, course_modules!inner(course_id)')
+      .eq('course_modules.course_id', courseId);
+
+    const { data: completedLessons } = await supabase
+      .from('lesson_progress')
+      .select('lesson_id')
+      .eq('student_id', user.id)
+      .eq('course_id', courseId)
+      .eq('completed', true);
+
+    const progress = totalLessons ? Math.round((completedLessons?.length || 0) / totalLessons.length * 100) : 0;
+
+    // Actualizar enrollment
+    await supabase
+      .from('enrollments')
+      .update({ progress })
+      .eq('student_id', user.id)
+      .eq('course_id', courseId);
+
+    // Verificar si se completó un módulo entero
+    const { data: courseModules } = await supabase
+      .from('course_modules')
+      .select('id, title, sort_order, course_lessons!inner(id)')
+      .eq('course_id', courseId)
+      .order('sort_order');
+
+    let moduleCompleted = null;
+    if (courseModules) {
+      for (const module of courseModules) {
+        const moduleLessons = module.course_lessons.map((l: any) => l.id);
+        const { data: moduleProgress } = await supabase
+          .from('lesson_progress')
+          .select('lesson_id')
+          .eq('student_id', user.id)
+          .eq('course_id', courseId)
+          .eq('completed', true)
+          .in('lesson_id', moduleLessons);
+
+        const isModuleCompleted = moduleProgress && moduleProgress.length === moduleLessons.length;
+        
+        if (isModuleCompleted) {
+          moduleCompleted = module.title;
+          break;
+        }
+      }
+    }
+
+    // Obtener información sobre la siguiente lección y módulo
+    const { data: courseLessons } = await supabase
+      .from('course_lessons')
+      .select('id, title, sort_order, course_modules!inner(course_id, sort_order, title)')
+      .eq('course_modules.course_id', courseId)
+      .order('course_modules.sort_order', { referencedTable: 'course_modules' })
+      .order('sort_order');
+
+    let nextLesson = null;
+    let isLastLessonOfModule = false;
+    let nextModule = null;
+
+    if (courseLessons) {
+      const currentIndex = courseLessons.findIndex(lesson => lesson.id === lessonId);
+      const nextLessonData = courseLessons[currentIndex + 1];
+      
+      if (nextLessonData) {
+        nextLesson = {
+          id: nextLessonData.id,
+          title: nextLessonData.title,
+          module: nextLessonData.course_modules.title
+        };
+      }
+
+      // Verificar si es la última lección del módulo actual
+      const { data: currentLessonData } = await supabase
+        .from('course_lessons')
+        .select('course_modules!inner(id, sort_order)')
+        .eq('id', lessonId)
+        .single();
+
+      if (currentLessonData && courseLessons) {
+        const currentModuleSort = currentLessonData.course_modules.sort_order;
+        const currentModuleLessons = courseLessons.filter(l => 
+          l.course_modules.sort_order === currentModuleSort
+        );
+        
+        isLastLessonOfModule = currentModuleLessons[currentModuleLessons.length - 1]?.id === lessonId;
+
+        // Si es la última del módulo y hay siguiente lección, esa es del siguiente módulo
+        if (isLastLessonOfModule && nextLessonData) {
+          nextModule = {
+            id: nextLessonData.course_modules.id,
+            title: nextLessonData.course_modules.title,
+            firstLessonId: nextLessonData.id
+          };
+        }
+      }
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      progress,
+      moduleCompleted,
+      nextLesson,
+      isLastLessonOfModule,
+      nextModule
+    });
+
+  } catch (error) {
+    console.error('Error completando lección:', error);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+  }
+}

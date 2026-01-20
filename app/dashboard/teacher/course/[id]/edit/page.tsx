@@ -227,21 +227,21 @@ export default function EditCoursePage() {
   if (loading) return <div className="p-10 text-white bg-gray-900 min-h-screen">Cargando...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8 font-sans relative">
+    <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-8 font-sans relative">
       
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
+        <div className="flex-1">
           <Link href="/dashboard/teacher" className="text-gray-400 hover:text-white text-sm">← Volver</Link>
-          <div className="flex items-center gap-3 mt-2">
-             <h1 className="text-3xl font-bold">Editar Curso</h1>
-             <span className={`px-3 py-1 rounded-full text-xs font-bold ${formData.is_published ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mt-2">
+             <h1 className="text-2xl sm:text-3xl font-bold">Editar Curso</h1>
+             <span className={`px-3 py-1 rounded-full text-xs font-bold self-start sm:self-auto ${formData.is_published ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
                 {formData.is_published ? '🟢 PUBLICADO' : '🟡 BORRADOR'}
              </span>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleSaveGeneral}>💾 Guardar Cambios</Button>
+          <Button onClick={handleSaveGeneral} className="text-sm sm:text-base">💾 Guardar Cambios</Button>
         </div>
       </div>
 
@@ -249,13 +249,13 @@ export default function EditCoursePage() {
       <div className="flex border-b border-gray-800 mb-8 overflow-x-auto">
         {TABS.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-4 font-medium transition-colors border-b-2 ${activeTab === tab.id ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400'}`}>
+            className={`px-3 sm:px-6 py-4 font-medium transition-colors border-b-2 whitespace-nowrap text-sm sm:text-base ${activeTab === tab.id ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400'}`}>
             {tab.label}
           </button>
         ))}
       </div>
 
-      <div className="bg-black border border-gray-800 rounded-2xl p-8 shadow-xl min-h-[500px]">
+      <div className="bg-black border border-gray-800 rounded-2xl p-4 sm:p-8 shadow-xl min-h-[500px]">
         
         {/* TAB 1: GENERAL */}
         {activeTab === 'general' && (
@@ -278,13 +278,13 @@ export default function EditCoursePage() {
           <div className="max-w-4xl mx-auto space-y-6">
              {modules.map((module) => (
                <div key={module.id} className="bg-gray-900 p-4 rounded-xl border border-gray-700">
-                 <div className="flex justify-between items-center mb-3">
+                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 gap-2">
                    {editingModuleId === module.id ? (
-                     <div className="flex gap-2 flex-1">
+                     <div className="flex gap-1 sm:gap-2 flex-1">
                        <input 
                          value={editingModuleTitle}
                          onChange={(e) => setEditingModuleTitle(e.target.value)}
-                         className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1 text-lg font-bold"
+                         className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 sm:px-3 py-1 text-base sm:text-lg font-bold min-w-0"
                          onKeyPress={(e) => {
                            if (e.key === 'Enter') {
                              handleEditModuleTitle(module.id, editingModuleTitle);
@@ -297,35 +297,35 @@ export default function EditCoursePage() {
                            handleEditModuleTitle(module.id, editingModuleTitle);
                            setEditingModuleId(null);
                          }}
-                         className="text-green-400 hover:text-green-300 px-2"
+                         className="text-green-400 hover:text-green-300 px-1 sm:px-2 text-sm sm:text-base flex-shrink-0"
                        >
                          ✅
                        </button>
                        <button 
                          onClick={() => setEditingModuleId(null)}
-                         className="text-red-400 hover:text-red-300 px-2"
+                         className="text-red-400 hover:text-red-300 px-1 sm:px-2 text-sm sm:text-base flex-shrink-0"
                        >
                          ❌
                        </button>
                      </div>
                    ) : (
                      <>
-                       <h3 className="font-bold text-lg">{module.title}</h3>
-                       <div className="flex gap-2">
+                       <h3 className="font-bold text-base sm:text-lg pr-2 min-w-0 break-words">{module.title}</h3>
+                       <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                          <button 
                            onClick={() => {
                              setEditingModuleId(module.id);
                              setEditingModuleTitle(module.title);
                            }}
-                           className="text-gray-400 hover:text-cyan-400 text-sm px-2 py-1 rounded border border-gray-700"
+                           className="text-gray-400 hover:text-cyan-400 text-xs sm:text-sm px-2 py-1 rounded border border-gray-700 whitespace-nowrap"
                          >
-                           ✏️ Editar
+                           ✏️ <span className="hidden sm:inline">Editar</span>
                          </button>
                          <button 
                            onClick={() => handleDeleteModule(module.id)}
-                           className="text-gray-400 hover:text-red-400 text-sm px-2 py-1 rounded border border-gray-700"
+                           className="text-gray-400 hover:text-red-400 text-xs sm:text-sm px-2 py-1 rounded border border-gray-700 whitespace-nowrap"
                          >
-                           🗑️ Eliminar
+                           🗑️ <span className="hidden sm:inline">Eliminar</span>
                          </button>
                        </div>
                      </>
@@ -333,42 +333,42 @@ export default function EditCoursePage() {
                  </div>
                  <div className="space-y-2">
                     {module.course_lessons.map((lesson: any) => (
-                      <div key={lesson.id} className="flex justify-between items-center bg-black/40 p-3 rounded border border-gray-800 hover:border-gray-600 transition">
-                         <div className="flex items-center gap-3">
-                            <span className="text-gray-400">📄</span>
-                            <span>{lesson.title}</span>
-                            {lesson.video_url && <span className="text-xs bg-green-900 text-green-300 px-2 rounded">Video OK</span>}
+                      <div key={lesson.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-black/40 p-3 rounded border border-gray-800 hover:border-gray-600 transition gap-2">
+                         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                            <span className="text-gray-400 flex-shrink-0">📄</span>
+                            <span className="truncate sm:break-words">{lesson.title}</span>
+                            {lesson.video_url && <span className="text-xs bg-green-900 text-green-300 px-2 rounded whitespace-nowrap flex-shrink-0">Video OK</span>}
                          </div>
-                         <div className="flex gap-2">
+                         <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                            <button 
                              onClick={() => openLessonModal(lesson)}
-                             className="text-xs bg-gray-800 hover:bg-cyan-900 text-cyan-400 border border-gray-700 px-3 py-1.5 rounded transition"
+                             className="text-xs bg-gray-800 hover:bg-cyan-900 text-cyan-400 border border-gray-700 px-2 sm:px-3 py-1.5 rounded transition whitespace-nowrap"
                            >
-                             ⚙️ Configurar
+                             ⚙️ <span className="hidden sm:inline">Configurar</span>
                            </button>
                            <button 
                              onClick={() => handleDeleteLesson(lesson.id)}
-                             className="text-xs bg-gray-800 hover:bg-red-900 text-red-400 border border-gray-700 px-3 py-1.5 rounded transition"
+                             className="text-xs bg-gray-800 hover:bg-red-900 text-red-400 border border-gray-700 px-2 sm:px-3 py-1.5 rounded transition whitespace-nowrap"
                            >
-                             🗑️ Eliminar
+                             🗑️ <span className="hidden sm:inline">Eliminar</span>
                            </button>
                          </div>
                       </div>
                     ))}
                  </div>
-                 <div className="mt-4 flex gap-2">
-                    <input placeholder="Nueva lección..." className="bg-black border border-gray-700 px-3 py-2 text-sm rounded flex-1"
+                 <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                    <input placeholder="Nueva lección..." className="bg-black border border-gray-700 px-3 py-2 text-sm rounded flex-1 min-w-0"
                       value={addingLessonToModuleId === module.id ? newLessonTitle : ''}
                       onChange={e => { setNewLessonTitle(e.target.value); setAddingLessonToModuleId(module.id); }} 
                     />
-                    <Button size="sm" onClick={() => handleAddLesson(module.id)}>+ Agregar</Button>
+                    <Button size="sm" onClick={() => handleAddLesson(module.id)} className="whitespace-nowrap">+ Agregar</Button>
                  </div>
                </div>
              ))}
              
-             <div className="mt-8 pt-6 border-t border-gray-800 flex gap-2">
-               <input placeholder="Nuevo Módulo" value={newModuleTitle} onChange={e => setNewModuleTitle(e.target.value)} className="bg-gray-900 p-2 rounded border border-gray-700" />
-               <Button onClick={handleAddModule}>Crear Módulo</Button>
+             <div className="mt-8 pt-6 border-t border-gray-800 flex flex-col sm:flex-row gap-2">
+               <input placeholder="Nuevo Módulo" value={newModuleTitle} onChange={e => setNewModuleTitle(e.target.value)} className="bg-gray-900 p-2 rounded border border-gray-700 flex-1 min-w-0" />
+               <Button onClick={handleAddModule} className="whitespace-nowrap">Crear Módulo</Button>
              </div>
           </div>
         )}

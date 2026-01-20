@@ -43,12 +43,17 @@ export async function POST(
       .select('id, course_modules!inner(course_id)')
       .eq('course_modules.course_id', courseId);
 
+    console.log('Total lessons found:', totalLessons?.length);
+    console.log('Course ID:', courseId);
+
     const { data: completedLessons } = await supabase
       .from('lesson_progress')
       .select('lesson_id')
       .eq('student_id', user.id)
       .eq('course_id', courseId)
       .eq('completed', true);
+
+    console.log('Completed lessons:', completedLessons?.length);
 
     const progress = totalLessons ? Math.round((completedLessons?.length || 0) / totalLessons.length * 100) : 0;
 
@@ -66,10 +71,15 @@ export async function POST(
       .eq('course_id', courseId)
       .order('sort_order');
 
+    console.log('Course modules found:', courseModules?.length);
+    console.log('Modules data:', courseModules);
+
     let moduleCompleted = null;
     if (courseModules) {
       for (const module of courseModules) {
         const moduleLessons = module.course_lessons.map((l: any) => l.id);
+        console.log(`Module ${module.title} has lessons:`, moduleLessons);
+        
         const { data: moduleProgress } = await supabase
           .from('lesson_progress')
           .select('lesson_id')
@@ -78,10 +88,12 @@ export async function POST(
           .eq('completed', true)
           .in('lesson_id', moduleLessons);
 
+        console.log(`Completed lessons in module ${module.title}:`, moduleProgress?.length);
         const isModuleCompleted = moduleProgress && moduleProgress.length === moduleLessons.length;
         
         if (isModuleCompleted) {
           moduleCompleted = module.title;
+          console.log('Module completed:', moduleCompleted);
           break;
         }
       }
@@ -95,13 +107,20 @@ export async function POST(
       .order('course_modules.sort_order', { referencedTable: 'course_modules' })
       .order('sort_order');
 
+    console.log('All course lessons found:', courseLessons?.length);
+    console.log('Course lessons:', courseLessons);
+    console.log('Current lesson ID:', lessonId);
+
     let nextLesson = null;
     let isLastLessonOfModule = false;
     let nextModule = null;
 
     if (courseLessons) {
       const currentIndex = courseLessons.findIndex(lesson => lesson.id === lessonId);
+      console.log('Current lesson index:', currentIndex);
+      
       const nextLessonData = courseLessons[currentIndex + 1];
+      console.log('Next lesson data:', nextLessonData);
       
       if (nextLessonData) {
         nextLesson = {
@@ -126,6 +145,9 @@ export async function POST(
         
         isLastLessonOfModule = currentModuleLessons[currentModuleLessons.length - 1]?.id === lessonId;
 
+        console.log('Is last lesson of module:', isLastLessonOfModule);
+        console.log('Current module lessons:', currentModuleLessons.length);
+
         // Si es la última del módulo y hay siguiente lección, esa es del siguiente módulo
         if (isLastLessonOfModule && nextLessonData) {
           nextModule = {
@@ -133,18 +155,23 @@ export async function POST(
             title: nextLessonData.course_modules.title,
             firstLessonId: nextLessonData.id
           };
+          console.log('Next module:', nextModule);
         }
       }
     }
 
-    return NextResponse.json({ 
+    const responseData = { 
       success: true, 
       progress,
       moduleCompleted,
       nextLesson,
       isLastLessonOfModule,
       nextModule
-    });
+    };
+
+    console.log('API Response:', responseData);
+    
+    return NextResponse.json(responseData);
 
   } catch (error) {
     console.error('Error completando lección:', error);

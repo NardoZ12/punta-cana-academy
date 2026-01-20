@@ -30,6 +30,7 @@ export default function LessonPage() {
   const [nextLesson, setNextLesson] = useState<any>(null);
   const [isLastLessonOfModule, setIsLastLessonOfModule] = useState(false);
   const [nextModule, setNextModule] = useState<any>(null);
+  const [isCourseCompleted, setIsCourseCompleted] = useState(false);
   
   const supabase = createClient();
 
@@ -176,7 +177,21 @@ export default function LessonPage() {
       });
 
       if (response.ok) {
+        const result = await response.json();
+        console.log('Completion result:', result);
+        
         setIsCompleted(true);
+        
+        // Actualizar siguiente lección y módulo basado en la respuesta del API
+        setNextLesson(result.nextLesson);
+        setIsLastLessonOfModule(result.isLastLessonOfModule);
+        setNextModule(result.nextModule);
+        
+        // Determinar si el curso está completado (no hay siguiente lección ni módulo)
+        const courseIsCompleted = !result.nextLesson && !result.nextModule;
+        setIsCourseCompleted(courseIsCompleted);
+        console.log('Course is completed:', courseIsCompleted);
+        
         setShowCompletionModal(true);
       }
     } catch (error) {
@@ -215,7 +230,21 @@ export default function LessonPage() {
       });
 
       if (response.ok) {
+        const result = await response.json();
+        console.log('Manual completion result:', result);
+        
         setIsCompleted(true);
+        
+        // Actualizar siguiente lección y módulo basado en la respuesta del API  
+        setNextLesson(result.nextLesson);
+        setIsLastLessonOfModule(result.isLastLessonOfModule);
+        setNextModule(result.nextModule);
+        
+        // Determinar si el curso está completado (no hay siguiente lección ni módulo)
+        const courseIsCompleted = !result.nextLesson && !result.nextModule;
+        setIsCourseCompleted(courseIsCompleted);
+        console.log('Course is completed:', courseIsCompleted);
+        
         setShowCompletionModal(true);
       }
     } catch (error) {
@@ -356,8 +385,8 @@ export default function LessonPage() {
                     ➡️ Ir a la siguiente lección
                   </Button>
                 </div>
-              ) : (
-                // Última lección del curso
+              ) : isCourseCompleted ? (
+                // Última lección del curso - curso realmente completado
                 <div className="space-y-4">
                   <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
                     <h3 className="text-lg font-semibold text-yellow-400 mb-2">🏅 ¡Curso Completado!</h3>
@@ -369,6 +398,18 @@ export default function LessonPage() {
                     className="w-full bg-yellow-600 hover:bg-yellow-700 text-lg py-3"
                   >
                     🎓 Ir al Dashboard
+                  </Button>
+                </div>
+              ) : (
+                // Error o estado inesperado
+                <div className="space-y-4">
+                  <p className="text-gray-300 mb-6">¡Lección completada!</p>
+                  <Button 
+                    onClick={() => router.push(`/dashboard/student/course/${courseId}`)}
+                    variant="primary"
+                    className="w-full bg-cyan-600 hover:bg-cyan-700 text-lg py-3"
+                  >
+                    📚 Volver al Curso
                   </Button>
                 </div>
               )}

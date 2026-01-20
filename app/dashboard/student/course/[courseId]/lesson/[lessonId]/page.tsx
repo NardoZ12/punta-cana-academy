@@ -50,14 +50,15 @@ async function markAsCompleted(lessonId: string, courseId: string) {
     .eq('student_id', user.id)
     .eq('course_id', courseId);
 
-  // Verificar si se completó un módulo entero
+  // Verificar si se completó un módulo entero para desbloquearlo
   const { data: courseModules } = await supabase
     .from('course_modules')
-    .select('id, title, course_lessons!inner(id)')
+    .select('id, title, sort_order, course_lessons!inner(id)')
     .eq('course_id', courseId)
     .order('sort_order');
 
   if (courseModules) {
+    let moduleCompleted = false;
     for (const module of courseModules) {
       const moduleLessons = module.course_lessons.map((l: any) => l.id);
       const { data: moduleProgress } = await supabase
@@ -71,12 +72,13 @@ async function markAsCompleted(lessonId: string, courseId: string) {
       const isModuleCompleted = moduleProgress && moduleProgress.length === moduleLessons.length;
       
       if (isModuleCompleted) {
-        console.log(`🎉 ¡Módulo "${module.title}" completado!`);
+        console.log(`🎉 ¡Módulo "${module.title}" completado! Siguiente módulo desbloqueado.`);
+        moduleCompleted = true;
       }
     }
   }
 
-  // Obtener la siguiente lección para redireccionar
+  // Verificar qué lección se debe desbloquear a continuación
   const { data: courseLessons } = await supabase
     .from('course_lessons')
     .select('id, sort_order, course_modules!inner(course_id, sort_order)')
@@ -84,21 +86,59 @@ async function markAsCompleted(lessonId: string, courseId: string) {
     .order('course_modules.sort_order', { referencedTable: 'course_modules' })
     .order('sort_order');
 
+  let nextUnlockedLessonId = null;
+  
   if (courseLessons) {
     const currentIndex = courseLessons.findIndex(lesson => lesson.id === lessonId);
     const nextLesson = courseLessons[currentIndex + 1];
     
-    revalidatePath(`/dashboard/student/course/${courseId}/lesson/${lessonId}`);
-    revalidatePath(`/dashboard/student/course/${courseId}`);
-    
-    // Redireccionar a la siguiente lección si existe
     if (nextLesson) {
-      const { redirect } = await import('next/navigation');
-      redirect(`/dashboard/student/course/${courseId}/lesson/${nextLesson.id}`);
+      // Verificar si la siguiente lección debe estar desbloqueada
+      const { data: nextLessonModule } = await supabase
+        .from('course_lessons')
+        .select('module_id, course_modules!inner(sort_order)')
+        .eq('id', nextLesson.id)
+        .single();
+
+      const { data: currentLessonModule } = await supabase
+        .from('course_lessons')
+        .select('module_id, course_modules!inner(sort_order)')
+        .eq('id', lessonId)
+        .single();
+
+      // Si es del mismo módulo, desbloquear la siguiente lección
+      // Si es de diferente módulo, verificar que el módulo anterior esté completo
+      if (nextLessonModule?.module_id === currentLessonModule?.module_id) {
+        nextUnlockedLessonId = nextLesson.id;
+      } else {
+        // Es del siguiente módulo, verificar si se desbloqueó
+        const currentModuleLessons = courseLessons.filter(l => 
+          l.course_modules.sort_order === currentLessonModule?.course_modules.sort_order
+        );
+        
+        const { data: currentModuleProgress } = await supabase
+          .from('lesson_progress')
+          .select('lesson_id')
+          .eq('student_id', user.id)
+          .eq('course_id', courseId)
+          .eq('completed', true)
+          .in('lesson_id', currentModuleLessons.map(l => l.id));
+
+        if (currentModuleProgress && currentModuleProgress.length === currentModuleLessons.length) {
+          nextUnlockedLessonId = nextLesson.id;
+        }
+      }
     }
-  } else {
-    revalidatePath(`/dashboard/student/course/${courseId}/lesson/${lessonId}`);
-    revalidatePath(`/dashboard/student/course/${courseId}`);
+  }
+
+  // Revalidar páginas
+  revalidatePath(`/dashboard/student/course/${courseId}/lesson/${lessonId}`);
+  revalidatePath(`/dashboard/student/course/${courseId}`);
+  
+  // Redireccionar a la siguiente lección si está desbloqueada
+  if (nextUnlockedLessonId) {
+    const { redirect } = await import('next/navigation');
+    redirect(`/dashboard/student/course/${courseId}/lesson/${nextUnlockedLessonId}`);
   }
 }
 

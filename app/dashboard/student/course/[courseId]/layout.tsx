@@ -68,22 +68,47 @@ export default function CourseLayout({
 
   // Agregar useEffect para actualizar cuando se marca una lección como completada
   useEffect(() => {
-    const handleStorageChange = () => {
-      // Recargar datos cuando hay cambios
-      window.location.reload();
+    // Función para recargar datos de progreso
+    const reloadProgress = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user && courseId) {
+        const { data: completedLessons } = await supabase
+          .from('lesson_progress')
+          .select('lesson_id, completed')
+          .eq('student_id', user.id)
+          .eq('course_id', courseId)
+          .eq('completed', true);
+
+        setCompletedLessonIds(completedLessons?.map(l => l.lesson_id) || []);
+      }
     };
 
-    // Escuchar cambios en el localStorage (opcional)
-    window.addEventListener('storage', handleStorageChange);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        reloadProgress();
+      }
+    };
+
+    // Escuchar cuando la página vuelve a ser visible
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     // Escuchar cambios de focus para actualizar cuando se regresa a la pestaña
-    window.addEventListener('focus', handleStorageChange);
+    window.addEventListener('focus', reloadProgress);
+
+    // Actualizar cada 5 segundos si la página está activa
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        reloadProgress();
+      }
+    }, 5000);
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('focus', handleStorageChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', reloadProgress);
+      clearInterval(interval);
     };
-  }, [completedLessonIds]);
+  }, [courseId, supabase]);
 
   const toggleMobileMenu = () => {
     const sidebar = document.getElementById('mobile-sidebar');
@@ -114,16 +139,16 @@ export default function CourseLayout({
     let isUnlocked = moduleIndex === 0; // El primer módulo siempre está desbloqueado
     
     if (moduleIndex > 0) {
-      // Obtener el módulo anterior del array ya ordenado
-      const previousModuleIndex = moduleIndex - 1;
+      // Obtener todos los módulos anteriores y verificar que estén completos
       const sortedModules = course.course_modules.sort((a: any, b: any) => a.sort_order - b.sort_order);
-      const previousModule = sortedModules[previousModuleIndex];
+      const previousModule = sortedModules[moduleIndex - 1];
       
       if (previousModule) {
-        const previousModuleLessons = previousModule.course_lessons;
-        const previousModuleCompleted = previousModuleLessons.every((lesson: any) => 
-          completedLessonIds.includes(lesson.id)
-        );
+        const previousModuleLessons = previousModule.course_lessons.map((l: any) => l.id);
+        const previousModuleCompleted = previousModuleLessons.length > 0 && 
+          previousModuleLessons.every((lessonId: string) => 
+            completedLessonIds.includes(lessonId)
+          );
         isUnlocked = previousModuleCompleted;
       }
     }
@@ -202,36 +227,50 @@ export default function CourseLayout({
                         }
                         
                         return (
-                          <Link 
+                          <div
                             key={lesson.id} 
-                            href={isLessonLocked ? '#' : `/dashboard/student/course/${courseId}/lesson/${lesson.id}`}
                             className={`block px-4 py-3 border-b border-gray-800 transition group ${
                               isLessonLocked 
                                 ? 'cursor-not-allowed opacity-60' 
                                 : 'hover:bg-gray-800'
                             } ${isCompleted ? 'bg-green-900/20' : ''}`}
                           >
-                             <div className="flex items-start gap-3">
+                            {isLessonLocked ? (
+                              <div className="flex items-start gap-3" title="Esta lección se desbloqueará cuando completes la lección anterior">
                                 <div className="mt-0.5 min-w-[16px]">
-                                  {isCompleted ? (
-                                    <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
-                                      <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
-                                    </div>
-                                  ) : isLessonLocked ? (
-                                    <div className="w-4 h-4 rounded-full border border-gray-600 flex items-center justify-center text-xs">🔒</div>
-                                  ) : (
-                                    <div className="w-4 h-4 rounded-full border border-gray-600 group-hover:border-white transition"></div>
-                                  )}
+                                  <div className="w-4 h-4 rounded-full border border-gray-600 flex items-center justify-center text-xs text-gray-500">🔒</div>
                                 </div>
-                                <div className={`text-sm transition ${
-                                  isLessonLocked ? 'text-gray-500' : 'text-gray-300 group-hover:text-white'
-                                } ${isCompleted ? 'text-green-300' : ''}`}>
+                                <div className="text-sm text-gray-500">
                                   {lesson.title}
+                                  <div className="text-xs text-gray-600 mt-1">Completa la lección anterior para desbloquear</div>
                                 </div>
-                             </div>
-                          </Link>
+                              </div>
+                            ) : (
+                              <Link 
+                                href={`/dashboard/student/course/${courseId}/lesson/${lesson.id}`}
+                                className="block"
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5 min-w-[16px]">
+                                    {isCompleted ? (
+                                      <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
+                                        <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                      </div>
+                                    ) : (
+                                      <div className="w-4 h-4 rounded-full border border-gray-600 group-hover:border-white transition"></div>
+                                    )}
+                                  </div>
+                                  <div className={`text-sm transition ${
+                                    'text-gray-300 group-hover:text-white'
+                                  } ${isCompleted ? 'text-green-300' : ''}`}>
+                                    {lesson.title}
+                                  </div>
+                                </div>
+                              </Link>
+                            )}
+                          </div>
                         );
                       })}
                    </div>
@@ -295,37 +334,51 @@ export default function CourseLayout({
                         }
                         
                         return (
-                          <Link 
+                          <div
                             key={lesson.id} 
-                            href={isLessonLocked ? '#' : `/dashboard/student/course/${courseId}/lesson/${lesson.id}`}
                             className={`block px-4 py-3 border-b border-gray-800 transition group ${
                               isLessonLocked 
                                 ? 'cursor-not-allowed opacity-60' 
                                 : 'hover:bg-gray-800'
                             } ${isCompleted ? 'bg-green-900/20' : ''}`}
-                            onClick={!isLessonLocked ? closeMobileMenu : undefined}
                           >
-                             <div className="flex items-start gap-3">
+                            {isLessonLocked ? (
+                              <div className="flex items-start gap-3" title="Esta lección se desbloqueará cuando completes la lección anterior">
                                 <div className="mt-0.5 min-w-[16px]">
-                                  {isCompleted ? (
-                                    <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
-                                      <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
-                                    </div>
-                                  ) : isLessonLocked ? (
-                                    <div className="w-4 h-4 rounded-full border border-gray-600 flex items-center justify-center text-xs">🔒</div>
-                                  ) : (
-                                    <div className="w-4 h-4 rounded-full border border-gray-600 group-hover:border-white transition"></div>
-                                  )}
+                                  <div className="w-4 h-4 rounded-full border border-gray-600 flex items-center justify-center text-xs text-gray-500">🔒</div>
                                 </div>
-                                <div className={`text-sm transition ${
-                                  isLessonLocked ? 'text-gray-500' : 'text-gray-300 group-hover:text-white'
-                                } ${isCompleted ? 'text-green-300' : ''}`}>
+                                <div className="text-sm text-gray-500">
                                   {lesson.title}
+                                  <div className="text-xs text-gray-600 mt-1">Completa la lección anterior para desbloquear</div>
                                 </div>
-                             </div>
-                          </Link>
+                              </div>
+                            ) : (
+                              <Link 
+                                href={`/dashboard/student/course/${courseId}/lesson/${lesson.id}`}
+                                className="block"
+                                onClick={closeMobileMenu}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5 min-w-[16px]">
+                                    {isCompleted ? (
+                                      <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
+                                        <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                      </div>
+                                    ) : (
+                                      <div className="w-4 h-4 rounded-full border border-gray-600 group-hover:border-white transition"></div>
+                                    )}
+                                  </div>
+                                  <div className={`text-sm transition ${
+                                    'text-gray-300 group-hover:text-white'
+                                  } ${isCompleted ? 'text-green-300' : ''}`}>
+                                    {lesson.title}
+                                  </div>
+                                </div>
+                              </Link>
+                            )}
+                          </div>
                         );
                       })}
                    </div>

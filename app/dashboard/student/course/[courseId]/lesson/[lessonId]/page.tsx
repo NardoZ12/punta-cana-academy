@@ -178,14 +178,6 @@ export default function LessonPage() {
       if (response.ok) {
         setIsCompleted(true);
         setShowCompletionModal(true);
-        
-        // Mostrar notificación de éxito
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('¡Lección completada! ✅', {
-            body: 'Has terminado esta lección exitosamente',
-            icon: '/favicon.ico'
-          });
-        }
       }
     } catch (error) {
       console.error('Error auto-completando lección:', error);
@@ -215,15 +207,28 @@ export default function LessonPage() {
   };
 
   const handleManualComplete = async () => {
-    await handleAutoComplete();
+    try {
+      const response = await fetch(`/api/lessons/${lessonId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId })
+      });
+
+      if (response.ok) {
+        setIsCompleted(true);
+        setShowCompletionModal(true);
+      }
+    } catch (error) {
+      console.error('Error completando lección manualmente:', error);
+    }
   };
 
-  // Solicitar permisos de notificación
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
+  // Solicitar permisos de notificación (opcional)
+  // useEffect(() => {
+  //   if ('Notification' in window && Notification.permission === 'default') {
+  //     Notification.requestPermission();
+  //   }
+  // }, []);
 
   if (loading) {
     return (
@@ -316,109 +321,64 @@ export default function LessonPage() {
          </div>
       </div>
 
-      {/* Modal de Felicitaciones */}
+      {/* Modal de Felicitaciones Simplificado */}
       {showCompletionModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <div className="text-center">
               <div className="text-6xl mb-4">🎉</div>
-              <h2 className="text-2xl font-bold text-white mb-2">¡Felicidades!</h2>
-              <p className="text-gray-300 mb-6">Has completado exitosamente esta lección.</p>
+              <h2 className="text-2xl font-bold text-white mb-4">¡Felicidades!</h2>
               
-              {isLastLessonOfModule ? (
+              {isLastLessonOfModule && nextModule ? (
                 // Última lección del módulo
-                nextModule ? (
-                  <div className="space-y-4">
-                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-4">
-                      <h3 className="text-lg font-semibold text-green-400 mb-2">
-                        🏆 ¡Módulo Completado!
-                      </h3>
-                      <p className="text-sm text-green-200">
-                        Has terminado todas las lecciones de este módulo.
-                      </p>
-                    </div>
-                    
-                    <p className="text-gray-300 mb-4">
-                      ¿Estás listo para continuar con el siguiente módulo?
-                    </p>
-                    
-                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3 mb-6">
-                      <p className="text-blue-300 text-sm">
-                        <span className="font-semibold">Siguiente:</span> {nextModule.title}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <Button 
-                        onClick={handleNextModule}
-                        variant="primary"
-                        className="flex-1 bg-green-600 hover:bg-green-700"
-                      >
-                        🚀 Sí, continuar al siguiente módulo
-                      </Button>
-                      <Button 
-                        onClick={handleStayHere}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        📖 Revisar esta lección
-                      </Button>
-                    </div>
+                <div className="space-y-4">
+                  <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-green-400 mb-2">🏆 ¡Módulo Completado!</h3>
                   </div>
-                ) : (
-                  // Última lección del curso
-                  <div className="space-y-4">
-                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
-                      <h3 className="text-lg font-semibold text-yellow-400 mb-2">
-                        🏅 ¡Curso Completado!
-                      </h3>
-                      <p className="text-sm text-yellow-200">
-                        ¡Has terminado todas las lecciones de este curso!
-                      </p>
-                    </div>
-
-                    <Button 
-                      onClick={() => router.push('/dashboard/student')}
-                      variant="primary"
-                      className="w-full bg-yellow-600 hover:bg-yellow-700"
-                    >
-                      🎓 Ir al Dashboard
-                    </Button>
-                  </div>
-                )
+                  <p className="text-gray-300 mb-6">¿Estás listo para el siguiente módulo?</p>
+                  <Button 
+                    onClick={handleNextModule}
+                    variant="primary"
+                    className="w-full bg-green-600 hover:bg-green-700 text-lg py-3"
+                  >
+                    🚀 Continuar al siguiente módulo
+                  </Button>
+                </div>
+              ) : nextLesson ? (
+                // Lección normal - siguiente lección disponible
+                <div className="space-y-4">
+                  <p className="text-gray-300 mb-6">Ya puedes pasar a la siguiente lección</p>
+                  <Button 
+                    onClick={handleNextLesson}
+                    variant="primary"
+                    className="w-full bg-cyan-600 hover:bg-cyan-700 text-lg py-3"
+                  >
+                    ➡️ Ir a la siguiente lección
+                  </Button>
+                </div>
               ) : (
-                // Lección normal
-                nextLesson && (
-                  <div className="space-y-4">
-                    <p className="text-gray-300 mb-4">
-                      ¡Excelente progreso! Ahora pasemos a la siguiente lección.
-                    </p>
-                    
-                    <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-lg p-3 mb-6">
-                      <p className="text-cyan-300 text-sm">
-                        <span className="font-semibold">Siguiente:</span> {nextLesson.title}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <Button 
-                        onClick={handleNextLesson}
-                        variant="primary"
-                        className="flex-1 bg-cyan-600 hover:bg-cyan-700"
-                      >
-                        ➡️ Continuar a la siguiente lección
-                      </Button>
-                      <Button 
-                        onClick={handleStayHere}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        📖 Revisar esta lección
-                      </Button>
-                    </div>
+                // Última lección del curso
+                <div className="space-y-4">
+                  <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-yellow-400 mb-2">🏅 ¡Curso Completado!</h3>
                   </div>
-                )
+                  <p className="text-gray-300 mb-6">¡Has terminado todo el curso!</p>
+                  <Button 
+                    onClick={() => router.push('/dashboard/student')}
+                    variant="primary"
+                    className="w-full bg-yellow-600 hover:bg-yellow-700 text-lg py-3"
+                  >
+                    🎓 Ir al Dashboard
+                  </Button>
+                </div>
               )}
+              
+              <button 
+                onClick={handleStayHere}
+                className="mt-4 text-gray-400 hover:text-gray-300 text-sm underline"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

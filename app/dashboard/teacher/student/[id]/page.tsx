@@ -1,39 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, BookOpen, Clock, CheckCircle, User, Calendar, TrendingUp, Award, Target } from 'lucide-react';
-
-interface StudentActivity {
-  id: number;
-  type: 'lesson' | 'quiz' | 'exam' | 'task';
-  title: string;
-  timestamp: string;
-  score?: number;
-}
-
-interface StudentProgress {
-  courseId: number;
-  courseName: string;
-  progress: number;
-  completedLessons: number;
-  totalLessons: number;
-  averageScore: number;
-}
+import { ArrowLeft, Calendar } from 'lucide-react';
 
 export default function StudentDetail() {
   const { id } = useParams();
-  const router = useRouter();
   const [student, setStudent] = useState<any>(null);
-  const [activities, setActivities] = useState<StudentActivity[]>([]);
-  const [progress, setProgress] = useState<StudentProgress[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Mock data - En producción esto vendría de Supabase
     const mockStudent = {
-      id: parseInt(id as string),
+      id: id,
       name: `Estudiante ${id}`,
       email: `student${id}@academy.com`,
       avatar: `https://ui-avatars.com/api/?name=Student+${id}&background=3B82F6&color=fff&size=200`,
@@ -41,245 +20,48 @@ export default function StudentDetail() {
       totalCourses: 3,
       completedCourses: 1,
       averageScore: 85,
-      totalHours: 127
+      totalHours: 127,
+      enrollments: [
+        {
+          course_id: '1',
+          enrolled_at: '2026-01-20T10:00:00Z',
+          progress: 75,
+          status: 'active',
+          grade: 88,
+          course: {
+            title: 'Introducción a React',
+            description: 'Aprende los fundamentos de React'
+          }
+        }
+      ]
     };
 
-    const mockActivities: StudentActivity[] = [
-      { id: 1, type: 'lesson', title: 'Introducción a React', timestamp: '2024-01-20 14:30', score: 95 },
-      { id: 2, type: 'quiz', title: 'Quiz: Fundamentos JS', timestamp: '2024-01-19 16:45', score: 88 },
-      { id: 3, type: 'exam', title: 'Examen Final - Módulo 1', timestamp: '2024-01-18 10:00', score: 92 },
-      { id: 4, type: 'task', title: 'Tarea: Crear componente', timestamp: '2024-01-17 09:15', score: 85 }
-    ];
-
-    const mockProgress: StudentProgress[] = [
-      {
-        courseId: 1,
-        courseName: 'Desarrollo Web Frontend',
-        progress: 85,
-        completedLessons: 17,
-        totalLessons: 20,
-        averageScore: 88
-      },
-      {
-        courseId: 2,
-        courseName: 'JavaScript Avanzado',
-        progress: 60,
-        completedLessons: 12,
-        totalLessons: 20,
-        averageScore: 82
-      },
-      {
-        courseId: 3,
-        courseName: 'Base de Datos',
-        progress: 30,
-        completedLessons: 6,
-        totalLessons: 20,
-        averageScore: 90
-      }
-    ];
-
-    setStudent(mockStudent);
-    setActivities(mockActivities);
-    setProgress(mockProgress);
-    setLoading(false);
+    setTimeout(() => {
+      setStudent(mockStudent);
+      setLoading(false);
+    }, 500);
   }, [id]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   if (!student) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex flex-col items-center justify-center min-h-screen">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4">Estudiante no encontrado</h2>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            Estudiante no encontrado
+          </h1>
           <Link 
-            href="/dashboard/teacher/student" 
-            className="text-blue-600 hover:text-blue-800"
+            href="/dashboard/teacher"
+            className="text-blue-600 hover:text-blue-800 font-medium"
           >
-            Volver a la lista de estudiantes
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'lesson': return <BookOpen className="w-4 h-4" />;
-      case 'quiz': return <CheckCircle className="w-4 h-4" />;
-      case 'exam': return <Award className="w-4 h-4" />;
-      case 'task': return <Target className="w-4 h-4" />;
-      default: return <BookOpen className="w-4 h-4" />;
-    }
-  };
-
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case 'lesson': return 'bg-blue-100 text-blue-800';
-      case 'quiz': return 'bg-green-100 text-green-800';
-      case 'exam': return 'bg-purple-100 text-purple-800';
-      case 'task': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const [student, setStudent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Mock data - posteriormente se conectará con Supabase
-    const mockStudents = [
-      {
-        id: '1',
-        email: 'maria@example.com',
-        full_name: 'María García',
-        created_at: '2026-01-15T10:00:00Z',
-        profile_image: null,
-        phone: '+1 (555) 123-4567',
-        enrollments: [
-          {
-            course_id: '1',
-            enrolled_at: '2026-01-20T10:00:00Z',
-            progress: 75,
-            status: 'active',
-            grade: 88,
-            course: {
-              title: 'Introducción a React',
-              description: 'Aprende los fundamentos de React'
-            }
-          }
-        ],
-        activityLog: [
-          { date: '2026-01-27', action: 'Completó la lección "Componentes React"' },
-          { date: '2026-01-25', action: 'Envió tarea: "Crear primer componente"' },
-          { date: '2026-01-23', action: 'Participó en foro de discusión' }
-        ]
-      },
-      {
-        id: '2',
-        email: 'carlos@example.com',
-        full_name: 'Carlos Rodríguez',
-        created_at: '2026-01-10T10:00:00Z',
-        profile_image: null,
-        phone: '+1 (555) 987-6543',
-        enrollments: [
-          {
-            course_id: '1',
-            enrolled_at: '2026-01-18T10:00:00Z',
-            progress: 100,
-            status: 'completed',
-            grade: 95,
-            course: {
-              title: 'Introducción a React',
-              description: 'Aprende los fundamentos de React'
-            }
-          },
-          {
-            course_id: '2',
-            enrolled_at: '2026-01-25T10:00:00Z',
-            progress: 25,
-            status: 'active',
-            grade: null,
-            course: {
-              title: 'JavaScript Avanzado',
-              description: 'Conceptos avanzados de JavaScript'
-            }
-          }
-        ],
-        activityLog: [
-          { date: '2026-01-26', action: 'Completó el curso "Introducción a React"' },
-          { date: '2026-01-25', action: 'Comenzó nuevo curso: "JavaScript Avanzado"' },
-          { date: '2026-01-20', action: 'Obtuvo certificado de React' }
-        ]
-      },
-      {
-        id: '3',
-        email: 'ana@example.com',
-        full_name: 'Ana López',
-        created_at: '2026-01-05T10:00:00Z',
-        profile_image: null,
-        phone: '+1 (555) 456-7890',
-        enrollments: [
-          {
-            course_id: '2',
-            enrolled_at: '2026-01-22T10:00:00Z',
-            progress: 50,
-            status: 'paused',
-            grade: null,
-            course: {
-              title: 'JavaScript Avanzado',
-              description: 'Conceptos avanzados de JavaScript'
-            }
-          }
-        ],
-        activityLog: [
-          { date: '2026-01-24', action: 'Pausó temporalmente el curso' },
-          { date: '2026-01-22', action: 'Se inscribió en JavaScript Avanzado' },
-          { date: '2026-01-20', action: 'Completó evaluación inicial' }
-        ]
-      }
-    ];
-
-    const foundStudent = mockStudents.find(s => s.id === id);
-    setStudent(foundStudent);
-    setLoading(false);
-  }, [id]);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800 border-green-200';
-      case 'completed': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'paused': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active': return <Clock className="h-4 w-4" />;
-      case 'completed': return <CheckCircle className="h-4 w-4" />;
-      case 'paused': return <Clock className="h-4 w-4" />;
-      default: return <Clock className="h-4 w-4" />;
-    }
-  };
-
-  const getProgressColor = (progress: number) => {
-    if (progress >= 80) return 'bg-green-500';
-    if (progress >= 50) return 'bg-yellow-500';
-    return 'bg-blue-500';
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando perfil del estudiante...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!student) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="text-gray-400 mb-4">👤</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Estudiante no encontrado</h2>
-          <p className="text-gray-600 mb-4">
-            No se pudo encontrar el estudiante con ID: {id}
-          </p>
-          <Link 
-            href="/dashboard/teacher/student"
-            className="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-500"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver a la lista
+            ← Volver al dashboard
           </Link>
         </div>
       </div>
@@ -288,142 +70,104 @@ export default function StudentDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Link 
-            href="/dashboard/teacher/student"
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors mb-4"
-          >
-            <ArrowLeft className="h-5 w-5" />
-            <span className="text-sm font-medium">Volver a Estudiantes</span>
-          </Link>
-          
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-6">
-              <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center">
-                <span className="text-indigo-600 font-semibold text-xl">
-                  {student.full_name.split(' ').map((n: string) => n[0]).join('')}
-                </span>
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">{student.full_name}</h1>
-                <p className="text-gray-600">{student.email}</p>
-                <p className="text-sm text-gray-500">
-                  Miembro desde: {new Date(student.created_at).toLocaleDateString('es-ES')}
-                </p>
-                {student.phone && (
-                  <p className="text-sm text-gray-500">
-                    Teléfono: {student.phone}
-                  </p>
-                )}
-              </div>
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center">
+              <Link
+                href="/dashboard/teacher"
+                className="mr-4 p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Link>
+              <h1 className="text-xl font-semibold text-gray-900">
+                Perfil de Estudiante
+              </h1>
             </div>
           </div>
         </div>
+      </div>
 
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Cursos Inscritos */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Cursos Inscritos</h2>
-              </div>
-              <div className="p-6 space-y-4">
-                {student.enrollments.map((enrollment: any, idx: number) => (
-                  <div key={idx} className="bg-gray-50 rounded-lg p-6 border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <BookOpen className="h-5 w-5 text-gray-500" />
-                        <h3 className="font-semibold text-gray-900">{enrollment.course.title}</h3>
-                      </div>
-                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(enrollment.status)}`}>
-                        {getStatusIcon(enrollment.status)}
-                        {enrollment.status === 'active' ? 'Activo' : 
-                         enrollment.status === 'completed' ? 'Completado' : 'Pausado'}
-                      </span>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 mb-4">{enrollment.course.description}</p>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 mb-1">Progreso</p>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full transition-all ${getProgressColor(enrollment.progress)}`}
-                              style={{ width: `${enrollment.progress}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-sm font-medium text-gray-700">{enrollment.progress}%</span>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 mb-1">Calificación</p>
-                        <p className="text-lg font-semibold text-gray-900">
-                          {enrollment.grade ? `${enrollment.grade}/100` : 'Pendiente'}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <p className="text-xs text-gray-500">
-                      Inscrito: {new Date(enrollment.enrolled_at).toLocaleDateString('es-ES')}
-                    </p>
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex flex-col items-center text-center">
+                <img
+                  src={student.avatar}
+                  alt={student.name}
+                  className="w-24 h-24 rounded-full mb-4"
+                />
+                <h2 className="text-xl font-semibold text-gray-900 mb-1">
+                  {student.name}
+                </h2>
+                <p className="text-gray-600 mb-4">{student.email}</p>
+                
+                <div className="grid grid-cols-2 gap-4 w-full">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{student.totalCourses}</div>
+                    <div className="text-sm text-gray-600">Cursos</div>
                   </div>
-                ))}
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{student.completedCourses}</div>
+                    <div className="text-sm text-gray-600">Completados</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">{student.averageScore}%</div>
+                    <div className="text-sm text-gray-600">Promedio</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{student.totalHours}</div>
+                    <div className="text-sm text-gray-600">Horas</div>
+                  </div>
+                </div>
+
+                <div className="mt-6 w-full pt-6 border-t border-gray-200">
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    Inscrito desde {student.enrolledDate}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Sidebar con actividad */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm">
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Actividad Reciente</h2>
+                <h3 className="text-lg font-medium text-gray-900">Inscripciones</h3>
               </div>
               <div className="p-6">
-                <div className="space-y-4">
-                  {student.activityLog.map((activity: any, idx: number) => (
-                    <div key={idx} className="flex gap-3">
-                      <div className="w-2 h-2 bg-indigo-600 rounded-full mt-2 flex-shrink-0"></div>
+                {student.enrollments && student.enrollments.map((enrollment: any, index: number) => (
+                  <div key={index} className="border-b border-gray-200 pb-4 mb-4 last:border-b-0 last:pb-0 last:mb-0">
+                    <div className="flex justify-between items-start">
                       <div>
-                        <p className="text-sm text-gray-900">{activity.action}</p>
-                        <p className="text-xs text-gray-500">{activity.date}</p>
+                        <h4 className="font-medium text-gray-900">{enrollment.course.title}</h4>
+                        <p className="text-sm text-gray-600">{enrollment.course.description}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Inscrito el {new Date(enrollment.enrolled_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          enrollment.status === 'active' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {enrollment.status}
+                        </span>
+                        <div className="mt-1">
+                          <span className="text-sm font-medium">{enrollment.progress}% progreso</span>
+                        </div>
+                        {enrollment.grade && (
+                          <div className="mt-1">
+                            <span className="text-sm text-green-600">Nota: {enrollment.grade}%</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Estadísticas rápidas */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Estadísticas</h3>
-              <div className="space-y-4">
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Cursos completados</span>
-                  <span className="font-semibold">
-                    {student.enrollments.filter((e: any) => e.status === 'completed').length}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Cursos activos</span>
-                  <span className="font-semibold">
-                    {student.enrollments.filter((e: any) => e.status === 'active').length}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Promedio general</span>
-                  <span className="font-semibold">
-                    {(() => {
-                      const grades = student.enrollments.filter((e: any) => e.grade).map((e: any) => e.grade);
-                      return grades.length > 0 
-                        ? Math.round(grades.reduce((a: number, b: number) => a + b, 0) / grades.length) 
-                        : 'N/A';
-                    })()}
-                  </span>
-                </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

@@ -123,10 +123,13 @@ export async function POST(
       console.log('Next lesson data:', nextLessonData);
       
       if (nextLessonData) {
+        const moduleData = Array.isArray(nextLessonData.course_modules) 
+          ? nextLessonData.course_modules[0] 
+          : nextLessonData.course_modules;
         nextLesson = {
           id: nextLessonData.id,
           title: nextLessonData.title,
-          module: nextLessonData.course_modules.title
+          module: moduleData?.title || ''
         };
       }
 
@@ -138,10 +141,14 @@ export async function POST(
         .single();
 
       if (currentLessonData && courseLessons) {
-        const currentModuleSort = currentLessonData.course_modules.sort_order;
-        const currentModuleLessons = courseLessons.filter(l => 
-          l.course_modules.sort_order === currentModuleSort
-        );
+        const currentModuleData = Array.isArray(currentLessonData.course_modules) 
+          ? currentLessonData.course_modules[0] 
+          : currentLessonData.course_modules;
+        const currentModuleSort = currentModuleData?.sort_order;
+        const currentModuleLessons = courseLessons.filter(l => {
+          const moduleData = Array.isArray(l.course_modules) ? l.course_modules[0] : l.course_modules;
+          return moduleData?.sort_order === currentModuleSort;
+        });
         
         isLastLessonOfModule = currentModuleLessons[currentModuleLessons.length - 1]?.id === lessonId;
 
@@ -150,9 +157,12 @@ export async function POST(
 
         // Si es la última del módulo y hay siguiente lección, esa es del siguiente módulo
         if (isLastLessonOfModule && nextLessonData) {
+          const nextModuleData = Array.isArray(nextLessonData.course_modules) 
+            ? nextLessonData.course_modules[0] 
+            : nextLessonData.course_modules;
           nextModule = {
-            id: nextLessonData.course_modules.id,
-            title: nextLessonData.course_modules.title,
+            id: nextModuleData?.id || '',
+            title: nextModuleData?.title || '',
             firstLessonId: nextLessonData.id
           };
           console.log('Next module:', nextModule);

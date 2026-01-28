@@ -15,7 +15,7 @@ interface Lesson {
   sort_order?: number;
 }
 
-export default function LessonPage() {
+export default function LessonPageRobust() {
   const { courseId, lessonId } = useParams();
   const router = useRouter();
   const supabase = createClient();
@@ -129,7 +129,7 @@ export default function LessonPage() {
 
       // Verificar inscripción si estamos usando course_lessons
       if (dbStructure.lessonsTable === 'course_lessons') {
-        const { data: enrollment, error: enrollmentError } = await supabase
+        const { data: enrollment } = await supabase
           .from('enrollments')
           .select('id')
           .eq('student_id', user.id)
@@ -137,28 +137,11 @@ export default function LessonPage() {
           .single();
 
         if (!enrollment) {
-          console.warn('⚠️ No hay inscripción. Creando inscripción automática...');
-          
-          // CREAR INSCRIPCIÓN AUTOMÁTICA si no existe
-          const { error: createError } = await supabase
-            .from('enrollments')
-            .insert({
-              student_id: user.id,
-              course_id: courseId as string,
-              progress: 0,
-              grade: null,
-              enrolled_at: new Date().toISOString()
-            });
-
-          if (createError) {
-            console.error('Error creando inscripción automática:', createError);
-            // No retornar, continuar intentando cargar la lección
-          } else {
-            console.log('✅ Inscripción automática creada');
-          }
+          console.error('Estudiante no inscrito en este curso');
+          return;
         }
 
-        // Cargar lección con verificaciones de seguridad más flexibles
+        // Cargar con verificaciones de seguridad
         const { data: lessonData, error } = await supabase
           .from('course_lessons')
           .select(`
@@ -174,32 +157,10 @@ export default function LessonPage() {
           .single();
 
         if (error || !lessonData) {
-          console.error('Error loading lesson from course_lessons:', error);
-          
-          // FALLBACK: Intentar con estructura legacy
-          console.log('🔄 Intentando con estructura legacy...');
-          setDbStructure(prev => ({ 
-            ...prev, 
-            lessonsTable: 'lessons',
-            progressTable: 'user_lesson_progress',
-            progressIdField: 'user_id'
-          }));
-          
-          const { data: legacyLessonData, error: legacyError } = await supabase
-            .from('lessons')
-            .select('*')
-            .eq('id', lessonId)
-            .single();
-
-          if (legacyError || !legacyLessonData) {
-            console.error('Error loading lesson from legacy table:', legacyError);
-            return;
-          }
-          
-          setLesson(legacyLessonData);
-        } else {
-          setLesson(lessonData);
+          console.error('Error loading lesson:', error);
+          return;
         }
+        setLesson(lessonData);
       } else {
         // Estructura legacy
         const { data: lessonData, error } = await supabase
@@ -209,13 +170,13 @@ export default function LessonPage() {
           .single();
 
         if (error || !lessonData) {
-          console.error('Error loading lesson from lessons table:', error);
+          console.error('Error loading lesson:', error);
           return;
         }
         setLesson(lessonData);
       }
 
-      // Verificar progreso (sin fallar si no existe)
+      // Verificar progreso
       await checkProgressWithStructure();
       
     } catch (error) {
@@ -241,25 +202,13 @@ export default function LessonPage() {
         progressQuery.eq('course_id', courseId);
       }
 
-      const { data: progress, error } = await progressQuery.single();
+      const { data: progress } = await progressQuery.single();
 
-      if (error) {
-        // Es normal que no exista progreso para lecciones no vistas
-        if (error.code === 'PGRST116') { // No rows returned
-          console.log('ℹ️ No hay progreso registrado para esta lección (normal)');
-          setIsCompleted(false);
-        } else {
-          console.warn('Warning checking progress:', error);
-          setIsCompleted(false);
-        }
-      } else if (progress?.completed) {
+      if (progress?.completed) {
         setIsCompleted(true);
-      } else {
-        setIsCompleted(false);
       }
     } catch (error) {
-      console.warn('Error checking progress (no crítico):', error);
-      setIsCompleted(false); // Asumir no completado si hay error
+      console.error('Error checking progress:', error);
     }
   };
 

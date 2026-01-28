@@ -1,172 +1,150 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/atoms/Button';
-import { createClient } from '@/utils/supabase/client';
+import { useState, useEffect } from 'react'
+import { useAuthContext } from '@/contexts/AuthContext'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  
+  const { signIn, isAuthenticated, user, profile } = useAuthContext()
+  const router = useRouter()
 
-  // Verificar si viene de una verificación exitosa
+  // Redirigir si ya está autenticado
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('verified') === 'true') {
-      setSuccess('¡Email verificado exitosamente! Ya puedes iniciar sesión.');
-    }
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-
-    const supabase = createClient();
-
-    // Iniciar sesión con Supabase
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      // Verificar si es un error de email no confirmado
-      if (error.message.includes('Email not confirmed') || 
-          error.message.includes('email_not_confirmed') ||
-          error.message.includes('signup_disabled')) {
-        setError('Tu email no ha sido verificado. Serás redirigido para que puedas verificarlo.');
-        setTimeout(() => {
-          router.push(`/verificar-email?email=${encodeURIComponent(email)}`);
-        }, 3000);
+    if (isAuthenticated && profile) {
+      // Redirigir según el tipo de usuario
+      if (profile.user_type === 'teacher') {
+        router.push('/dashboard/teacher')
+      } else if (profile.user_type === 'admin') {
+        router.push('/dashboard/admin')
       } else {
-        setError('Correo o contraseña incorrectos');
+        router.push('/dashboard/student')
       }
-      setIsLoading(false);
-    } else {
-      // Verificar si el usuario ha confirmado su email
-      if (data.user && !data.user.email_confirmed_at) {
-        setError('Tu email no ha sido verificado. Serás redirigido para que puedas verificarlo.');
-        setTimeout(() => {
-          router.push(`/verificar-email?email=${encodeURIComponent(email)}`);
-        }, 3000);
-        setIsLoading(false);
-        return;
-      }
-
-      // Obtener el perfil del usuario para saber su tipo
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('user_type')
-          .eq('id', user.id)
-          .single();
-        
-        // Redirigir según el tipo de usuario
-        if (profile?.user_type === 'teacher') {
-          router.push('/dashboard/teacher');
-        } else {
-          router.push('/dashboard/student');
-        }
-      } else {
-        router.push('/dashboard/student');
-      }
-      router.refresh();
     }
-  };
+  }, [isAuthenticated, profile, router])
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+
+    const { error: authError } = await signIn(email, password)
+    
+    if (authError) {
+      setError(authError)
+      setLoading(false)
+    }
+    // El redireccionamiento se maneja en el useEffect
+  }
 
   return (
-    <div className="min-h-screen bg-pca-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <Link href="/" className="text-3xl font-bold text-white tracking-wider mb-6 inline-block">
-          PCA
-        </Link>
-        <h2 className="text-3xl font-extrabold text-white">
-          Inicia Sesión
-        </h2>
-        <p className="mt-2 text-sm text-gray-400">
-          ¿No tienes cuenta?{' '}
-          <Link href="/registro" className="font-medium text-pca-blue hover:text-white transition-colors">
-            Regístrate - Acceso Gratuito
-          </Link>
-        </p>
-        <p className="mt-1 text-xs text-gray-500">
-          ¿No has verificado tu email?{' '}
-          <Link href="/verificar-email" className="font-medium text-pca-blue hover:text-white transition-colors">
-            Verificar ahora
-          </Link>
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-gray-900 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10 border border-gray-800">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-2xl">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Iniciar Sesión
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Accede a tu cuenta de Punta Cana Academy
+          </p>
+        </div>
+        
+        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+              {error}
+            </div>
+          )}
           
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            
-            {success && (
-              <div className="bg-green-500/10 border border-green-500 text-green-400 text-sm p-3 rounded">
-                {success}
-              </div>
-            )}
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500 text-red-500 text-sm p-3 rounded">
-                {error}
-              </div>
-            )}
-
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Correo Electrónico
               </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="tu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
-
+            
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Contraseña
               </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  className="appearance-none block w-full px-3 py-3 border border-gray-700 rounded-md shadow-sm placeholder-gray-500 bg-gray-800 text-white focus:outline-none focus:ring-pca-blue focus:border-pca-blue sm:text-sm"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Tu contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
+          </div>
 
-            <div>
-              <Button variant="primary" fullWidth disabled={isLoading} type="submit">
-                {isLoading ? 'Entrando...' : 'Iniciar Sesión'}
-              </Button>
-            </div>
-          </form>
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Iniciando sesión...
+                </div>
+              ) : (
+                'Iniciar Sesión'
+              )}
+            </button>
+          </div>
 
+          <div className="text-center">
+            <p className="text-sm text-gray-600">
+              ¿No tienes una cuenta?{' '}
+              <Link 
+                href="/registro" 
+                className="font-medium text-indigo-600 hover:text-indigo-500"
+              >
+                Regístrate aquí
+              </Link>
+            </p>
+          </div>
+
+          <div className="text-center">
+            <Link 
+              href="/" 
+              className="font-medium text-gray-600 hover:text-gray-500"
+            >
+              ← Volver al inicio
+            </Link>
+          </div>
+        </form>
+
+        {/* Información de prueba para desarrollo */}
+        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+          <p className="text-xs text-gray-600 font-medium mb-2">Cuentas de prueba:</p>
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>Profesor: profesor@test.com / password123</p>
+            <p>Estudiante: estudiante@test.com / password123</p>
+          </div>
         </div>
       </div>
     </div>
-  );
+  )
 }

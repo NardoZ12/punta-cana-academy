@@ -48,7 +48,8 @@ export default function DiagnosticPage() {
           userType: profileData?.user_type || 'No definido',
           fullName: profileData?.full_name || 'No definido',
           email: profileData?.email || 'No definido',
-          error: profileError?.message || 'Sin errores'
+          error: profileError?.message || 'Sin errores',
+          needsCreation: !profileData
         };
 
         setUserProfile(profileData);
@@ -96,11 +97,6 @@ export default function DiagnosticPage() {
   };
 
   const createMissingProfile = async () => {
-    if (!diagnostic.session?.userId || diagnostic.session.userId === 'No disponible') {
-      alert('No se puede crear perfil sin usuario autenticado');
-      return;
-    }
-
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session?.user) {
@@ -112,18 +108,19 @@ export default function DiagnosticPage() {
         id: sessionData.session.user.id,
         email: sessionData.session.user.email,
         full_name: sessionData.session.user.user_metadata?.full_name || 'Usuario',
-        user_type: 'student', // Por defecto
+        user_type: 'teacher', // Por defecto crear como profesor
         language: 'es'
       };
 
       const { error } = await supabase
         .from('profiles')
-        .insert([profileData]);
+        .upsert(profileData, { onConflict: 'id' })
+        .select();
 
       if (error) {
         alert(`Error creando perfil: ${error.message}`);
       } else {
-        alert('Perfil creado exitosamente');
+        alert('✅ Perfil de PROFESOR creado exitosamente!');
         runDiagnostic(); // Re-ejecutar diagnóstico
       }
     } catch (error: any) {
@@ -234,12 +231,15 @@ export default function DiagnosticPage() {
               </>
             ) : (
               <div>
-                <p>No se encontró perfil para el usuario actual</p>
+                <p className="text-yellow-400 mb-4">⚠️ No se encontró perfil para el usuario actual</p>
+                <p className="text-sm text-gray-400 mb-4">
+                  Para usar el sistema necesitas tener un perfil. Haz clic en el botón de abajo para crear uno como PROFESOR.
+                </p>
                 <button
                   onClick={createMissingProfile}
-                  className="mt-2 bg-yellow-600 px-4 py-2 rounded hover:bg-yellow-700"
+                  className="bg-green-600 px-6 py-3 rounded-lg hover:bg-green-700 font-bold"
                 >
-                  Crear Perfil
+                  🎓 Crear Perfil de PROFESOR
                 </button>
               </div>
             )}

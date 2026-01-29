@@ -12,11 +12,17 @@ export default function DiagnosticPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    runDiagnostic();
+    // Ejecutar diagnóstico después de un pequeño delay para evitar problemas de carga
+    const timer = setTimeout(() => {
+      runDiagnostic();
+    }, 1000);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const runDiagnostic = async () => {
     setLoading(true);
+    setError(null);
     const results: any = {};
 
     try {
@@ -26,8 +32,17 @@ export default function DiagnosticPage() {
         supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Configurada' : '❌ No configurada',
       };
 
-      // 2. Verificar sesión actual
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      // 2. Verificar sesión actual con timeout
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 10000)
+      );
+      
+      const { data: sessionData, error: sessionError } = await Promise.race([
+        sessionPromise,
+        timeoutPromise
+      ]) as any;
+      
       results.session = {
         exists: sessionData.session ? '✅ Activa' : '❌ No hay sesión',
         user: sessionData.session?.user?.email || 'No disponible',
@@ -36,61 +51,51 @@ export default function DiagnosticPage() {
       };
 
       if (sessionData.session?.user) {
-        // 3. Verificar perfil del usuario
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', sessionData.session.user.id)
-          .single();
-
-        results.profile = {
-          exists: profileData ? '✅ Perfil encontrado' : '❌ Sin perfil',
-          userType: profileData?.user_type || 'No definido',
-          fullName: profileData?.full_name || 'No definido',
-          email: profileData?.email || 'No definido',
-          error: profileError?.message || 'Sin errores',
-          needsCreation: !profileData
-        };
-
-        setUserProfile(profileData);
-
-        // 4. Verificar acceso a tablas relacionadas
+        // 3. Verificar perfil del usuario con timeout
         try {
-          const { data: coursesData, error: coursesError } = await supabase
-            .from('courses')
-            .select('id')
-            .limit(1);
-
-          results.tables = {
-            courses: coursesError ? `❌ Error: ${coursesError.message}` : '✅ Accesible',
-          };
-        } catch (tableError) {
-          results.tables = {
-            courses: `❌ Error: ${tableError}`,
-          };
-        }
-
-        // 5. Verificar políticas RLS
-        try {
-          const { data: testData, error: testError } = await supabase
+          const profilePromise = supabase
             .from('profiles')
-            .select('id')
-            .eq('id', sessionData.session.user.id);
+            .select('*')
+            .eq('id', sessionData.session.user.id)
+            .single();
+          
+          const profileTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout obteniendo perfil')), 8000)
+          );
+          
+          const { data: profileData, error: profileError } = await Promise.race([
+            profilePromise,
+            profileTimeoutPromise
+          ]) as any;
 
-          results.rls = {
-            profileAccess: testError ? `❌ Error: ${testError.message}` : '✅ Acceso permitido',
+          results.profile = {
+            exists: profileData ? '✅ Perfil encontrado' : '❌ Sin perfil',
+            userType: profileData?.user_type || 'No definido',
+            fullName: profileData?.full_name || 'No definido',
+            email: profileData?.email || 'No definido',
+            error: profileError?.message || 'Sin errores',
+            needsCreation: !profileData
           };
-        } catch (rlsError) {
-          results.rls = {
-            profileAccess: `❌ Error: ${rlsError}`,
+
+          setUserProfile(profileData);
+
+        } catch (profileError: any) {
+          results.profile = {
+            exists: '❌ Error obteniendo perfil',
+            error: profileError.message || 'Error desconocido',
+            needsCreation: true
           };
         }
       }
 
       setDiagnostic(results);
     } catch (error: any) {
-      setError(error.message);
       console.error('Error en diagnóstico:', error);
+      setError(error.message);
+      setDiagnostic({
+        error: 'Error general en diagnóstico',
+        message: error.message
+      });
     }
 
     setLoading(false);

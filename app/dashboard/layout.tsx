@@ -17,11 +17,11 @@ export default async function DashboardLayout({
   // Get user profile
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, role')
+    .select('full_name, user_type')
     .eq('id', user.id)
     .single();
 
-  const role = profile?.role || 'student';
+  const role = profile?.user_type || 'student';
 
   return (
     <div className="min-h-screen bg-[#0f1115] flex">

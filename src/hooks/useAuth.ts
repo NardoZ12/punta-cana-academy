@@ -83,6 +83,8 @@ export function useAuth() {
   // Obtener perfil del usuario
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
+      console.log('🔍 Obteniendo perfil para usuario:', userId);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -90,13 +92,23 @@ export function useAuth() {
         .single()
 
       if (error) {
-        console.error('Error obteniendo perfil:', error)
+        console.error('❌ Error obteniendo perfil:', error)
+        
+        // Si el perfil no existe, intentar crearlo
+        if (error.code === 'PGRST116') {
+          console.log('🔧 Perfil no existe, intentando crear...');
+          const user = await supabase.auth.getUser();
+          if (user.data.user) {
+            return await createProfile(user.data.user);
+          }
+        }
         return null
       }
 
+      console.log('✅ Perfil obtenido:', data);
       return data as Profile
     } catch (error) {
-      console.error('Error fetchProfile:', error)
+      console.error('💥 Error fetchProfile:', error)
       return null
     }
   }

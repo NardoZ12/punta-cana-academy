@@ -15,15 +15,36 @@ export default async function DashboardTrafficCop() {
     return redirect('/login'); // O la ruta donde tengas tu login
   }
 
-  // 2. Buscamos qué ROL tiene este usuario en la base de datos
-  const { data: profile } = await supabase
+  // 2. Buscamos qué TIPO DE USUARIO tiene este usuario en la base de datos
+  const { data: profile, error } = await supabase
     .from('profiles')
-    .select('role')
+    .select('user_type, full_name')
     .eq('id', user.id)
     .single();
 
+  if (error) {
+    console.error('Error obteniendo perfil:', error);
+    // Si hay error obteniendo el perfil, crear uno por defecto
+    const { error: insertError } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          id: user.id,
+          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario',
+          user_type: 'student', // Por defecto estudiante
+          language: 'es'
+        }
+      ]);
+    
+    if (!insertError) {
+      return redirect('/dashboard/student');
+    }
+  }
+
   // 3. DIRIGIMOS EL TRÁFICO 🚦
-  if (profile?.role === 'teacher') {
+  console.log('👤 Usuario:', user.email, 'Tipo:', profile?.user_type);
+  
+  if (profile?.user_type === 'teacher') {
     return redirect('/dashboard/teacher');
   } else {
     // Si es estudiante (o cualquier otra cosa), va al panel de estudiante

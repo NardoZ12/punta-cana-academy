@@ -1,53 +1,48 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/utils/supabase/server'; // Asegúrate de tener configurado el cliente de servidor
-
-// Esta página necesita ser dinámica porque usa autenticación de servidor
-export const dynamic = 'force-dynamic';
+import { createClient } from '@/utils/supabase/server';
 
 export default async function DashboardTrafficCop() {
-  const supabase = await createClient();
+  const supabase = createClient();
 
-  // 1. Verificamos si hay usuario conectado
-  const { data: { user } } = await supabase.auth.getUser();
+  // 1. Obtener usuario actual
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  if (!user) {
-    // Si no está logueado, pa' fuera (al login)
-    return redirect('/login'); // O la ruta donde tengas tu login
+  if (userError || !user) {
+    console.error('Error fetching user or no session:', userError);
+    return redirect('/login');
   }
 
-  // 2. Buscamos qué TIPO DE USUARIO tiene este usuario en la base de datos
-  const { data: profile, error } = await supabase
+  // 2. Buscar el user_type en la tabla profiles
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('user_type, full_name')
+    .select('user_type')
     .eq('id', user.id)
-    .single();
+    .maybeSingle(); // maybeSingle es más seguro que single()
 
-  if (error) {
-    console.error('Error obteniendo perfil:', error);
-    // Si hay error obteniendo el perfil, crear uno por defecto
-    const { error: insertError } = await supabase
-      .from('profiles')
-      .insert([
-        {
-          id: user.id,
-          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario',
-          user_type: 'student', // Por defecto estudiante
-          language: 'es'
-        }
-      ]);
-    
-    if (!insertError) {
-      return redirect('/dashboard/student');
-    }
+  if (profileError) {
+    console.error('Error fetching profile:', profileError);
+    // Si falla, por seguridad lo mandamos a estudiante (o podrías mandarlo a login)
+    return redirect('/dashboard/student');
   }
 
-  // 3. DIRIGIMOS EL TRÁFICO 🚦
-  console.log('👤 Usuario:', user.email, 'Tipo:', profile?.user_type);
-  
-  if (profile?.user_type === 'teacher') {
+  if (!profile || !profile.user_type) {
+    console.warn('Usuario sin perfil o sin user_type:', user.id);
+    // Si no tiene perfil, podrías mandarlo a crear uno, pero por ahora... login
+    return redirect('/login'); 
+  }
+
+  // 3. Normalizar el user_type (quitar espacios y poner minúsculas)
+  const userType = String(profile.user_type).toLowerCase().trim();
+
+  if (userType === 'teacher') {
     return redirect('/dashboard/teacher');
+  } else if (userType === 'student') {
+    return redirect('/dashboard/student');
   } else {
-    // Si es estudiante (o cualquier otra cosa), va al panel de estudiante
+    // Tipo desconocido
     return redirect('/dashboard/student');
   }
 }

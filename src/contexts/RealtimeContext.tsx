@@ -72,7 +72,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         if (Notification.permission === 'granted') {
           new Notification(newNotification.title, {
             body: newNotification.message,
-            icon: '/images/logos/favicon.ico'
+            icon: '/images/logos/favicon-d.png'
           });
         }
       })

@@ -1,28 +1,135 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Modern Professional Dark Theme - Punta Cana Academy */
+  --background: #0f1115;
+  --foreground: #f0f0f0;
+  
+  /* Card and Surface Colors */
+  --card: #161b22;
+  --card-foreground: #f0f0f0;
+  --card-hover: #1c232d;
+  
+  /* Primary Accent - Cyan */
+  --primary: #06b6d4;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0891b2;
+  
+  /* Secondary Colors */
+  --secondary: #21262d;
+  --secondary-foreground: #c9d1d9;
+  
+  /* Muted Colors */
+  --muted: #30363d;
+  --muted-foreground: #8b949e;
+  
+  /* Border Colors */
+  --border: #30363d;
+  --border-subtle: #21262d;
+  
+  /* Status Colors */
+  --success: #22c55e;
+  --success-muted: rgba(34, 197, 94, 0.15);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245, 158, 11, 0.15);
+  --error: #ef4444;
+  --error-muted: rgba(239, 68, 68, 0.15);
+  
+  /* Input Colors */
+  --input: #21262d;
+  --input-border: #30363d;
+  
+  /* Radius */
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --font-sans: var(--font-geist-sans), 'Inter', system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), 'JetBrains Mono', monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Custom Classes for LMS */
+.glass-card {
+  background: rgba(22, 27, 34, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+}
+
+.gradient-border {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius);
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--primary), transparent 60%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Tab Component */
+.tab-active {
+  border-bottom: 2px solid var(--primary);
+  color: var(--primary);
+}
+
+.tab-inactive {
+  border-bottom: 2px solid transparent;
+  color: var(--muted-foreground);
+}
+
+.tab-inactive:hover {
+  color: var(--foreground);
+  border-bottom-color: var(--border);
 }
 
 /* Estilos para el banner de verificación de email */

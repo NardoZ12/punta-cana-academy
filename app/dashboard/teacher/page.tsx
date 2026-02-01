@@ -6,7 +6,6 @@ import { Button } from '@/components/atoms/Button';
 import { createClient } from '@/utils/supabase/client';
 
 export default function TeacherDashboard() {
-  const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [teacherName, setTeacherName] = useState('');
@@ -16,47 +15,69 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     async function loadTeacherData() {
+      const supabase = createClient();
+      
       try {
         setLoading(true);
+        console.log('🔵 Teacher Dashboard: Iniciando carga...');
+        
         // 1. Verificar Usuario
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-           // Si no hay usuario, redirigir (o manejar error)
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log('🔵 Teacher Dashboard: Usuario obtenido:', user?.id, userError?.message);
+        
+        if (userError || !user) {
+           console.log('🔵 Teacher Dashboard: No hay usuario, redirigiendo...');
            window.location.href = '/login';
            return;
         }
 
-        // 2. Verificar Perfil (AQUÍ ESTABA EL ERROR)
-        // Usamos 'user_type' en lugar de 'role'
+        // 2. Verificar Perfil
+        console.log('🔵 Teacher Dashboard: Obteniendo perfil...');
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('full_name, user_type') 
           .eq('id', user.id)
           .single();
 
-        if (profileError) throw profileError;
+        console.log('🔵 Teacher Dashboard: Perfil:', profile, profileError?.message);
+
+        if (profileError) {
+          console.error('🔴 Error obteniendo perfil:', profileError);
+          setError(`Error obteniendo perfil: ${profileError.message}`);
+          setLoading(false);
+          return;
+        }
         
         // Validación de seguridad extra
-        if (profile.user_type !== 'teacher') {
-           setError("No tienes permisos de profesor.");
+        if (profile?.user_type !== 'teacher') {
+           console.log('🔵 Teacher Dashboard: Usuario no es profesor:', profile?.user_type);
+           setError(`No tienes permisos de profesor. Tu rol es: ${profile?.user_type || 'desconocido'}`);
            setLoading(false);
            return;
         }
 
-        setTeacherName(profile.full_name);
+        setTeacherName(profile.full_name || 'Profesor');
 
         // 3. Cargar Cursos del Profesor
+        console.log('🔵 Teacher Dashboard: Cargando cursos...');
         const { data: coursesData, error: coursesError } = await supabase
           .from('courses')
           .select('*')
           .eq('instructor_id', user.id);
 
-        if (coursesError) throw coursesError;
-        if (coursesData) setCourses(coursesData);
+        console.log('🔵 Teacher Dashboard: Cursos:', coursesData?.length, coursesError?.message);
+
+        if (coursesError) {
+          console.error('🔴 Error obteniendo cursos:', coursesError);
+          // No es error crítico, continuamos sin cursos
+        }
+        
+        setCourses(coursesData || []);
+        console.log('🟢 Teacher Dashboard: Carga completada');
 
       } catch (err: any) {
-        console.error("Error cargando dashboard:", err);
-        setError("No se pudo cargar tu perfil de profesor. Verifica tu conexión o permisos.");
+        console.error("🔴 Error cargando dashboard:", err);
+        setError(`Error inesperado: ${err.message}`);
       } finally {
         setLoading(false);
       }

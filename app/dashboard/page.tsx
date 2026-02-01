@@ -1,8 +1,11 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
 
+// Forzar renderizado dinámico para evitar errores de build
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardTrafficCop() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Obtener usuario actual
   const {

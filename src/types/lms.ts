@@ -63,13 +63,11 @@ export interface Enrollment {
   id: string
   student_id: string
   course_id: string
-  enrollment_date?: string
-  enrolled_at?: string
-  completion_date?: string
-  progress_percentage?: number
+  status: 'active' | 'completed' | 'dropped'
   progress?: number
-  status: 'active' | 'completed' | 'dropped' | 'suspended' | 'in_progress'
   grade?: number
+  enrolled_at?: string
+  last_accessed_at?: string
   created_at: string
   updated_at?: string
   
@@ -98,38 +96,31 @@ export interface LessonProgress {
 export interface Assignment {
   id: string
   course_id: string
-  lesson_id?: string
   title: string
   description?: string
-  instructions?: string
+  type: 'task' | 'quiz'
+  content: any // JSONB: { questions: [] } para quiz o { instructions: "" } para task
   due_date?: string
-  max_points: number
-  file_upload_allowed: boolean
-  submission_format: string
-  created_by?: string
   is_published: boolean
   created_at: string
   updated_at?: string
   
   // Relaciones
   course?: Course
-  lesson?: CourseLesson
-  submissions?: AssignmentSubmission[]
+  submissions?: Submission[]
 }
 
-export interface AssignmentSubmission {
+export interface Submission {
   id: string
   assignment_id: string
   student_id: string
-  submission_text?: string
+  status: 'pending' | 'submitted' | 'graded'
   file_url?: string
-  file_name?: string
-  submitted_at: string
-  graded_at?: string
+  answers?: any // JSONB para respuestas de quiz
   grade?: number
   feedback?: string
-  graded_by?: string
-  status: 'draft' | 'submitted' | 'graded' | 'late'
+  submitted_at: string
+  graded_at?: string
   created_at: string
   updated_at?: string
   
@@ -138,72 +129,15 @@ export interface AssignmentSubmission {
   student?: Profile
 }
 
-export interface Exam {
-  id: string
-  course_id: string
-  title: string
-  description?: string
-  instructions?: string
-  time_limit_minutes: number
-  max_attempts: number
-  passing_score: number
-  is_published: boolean
-  available_from: string
-  available_until: string
-  created_by?: string
-  created_at: string
-  updated_at?: string
-  
-  // Relaciones
-  course?: Course
-  questions?: ExamQuestion[]
-  submissions?: ExamSubmission[]
-}
-
-export interface ExamQuestion {
-  id: string
-  exam_id: string
-  question_text: string
-  question_type: 'multiple_choice' | 'true_false' | 'short_answer' | 'essay'
-  options?: any
-  correct_answer?: string
-  points: number
-  order_in_exam: number
-  created_at: string
-  
-  // Relaciones
-  exam?: Exam
-}
-
-export interface ExamSubmission {
-  id: string
-  exam_id: string
-  student_id: string
-  answers: any
-  score?: number
-  started_at: string
-  submitted_at?: string
-  time_spent_minutes?: number
-  attempt_number: number
-  status: 'in_progress' | 'submitted' | 'graded' | 'abandoned' | 'completed'
-  created_at: string
-  updated_at?: string
-  
-  // Relaciones
-  exam?: Exam
-  student?: Profile
-}
-
-export interface NotificationSettings {
+export interface Notification {
   id: string
   user_id: string
-  email_assignments: boolean
-  email_grades: boolean
-  email_announcements: boolean
-  push_notifications: boolean
-  sms_notifications: boolean
+  title: string
+  message: string
+  is_read: boolean
+  type: 'info' | 'success' | 'warning' | 'error'
+  link?: string
   created_at: string
-  updated_at?: string
 }
 
 // Tipos para formularios y UI

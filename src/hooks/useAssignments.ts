@@ -42,7 +42,7 @@ export interface Assignment {
   course_id: string;
   title: string;
   description?: string;
-  type: 'task' | 'exam' | 'quiz';
+  assignment_type: 'task' | 'exam' | 'quiz';
   due_date?: string;
   max_score: number;
   quiz_data?: QuizData;
@@ -544,7 +544,7 @@ interface CreateAssignmentParams {
   courseId: string;
   title: string;
   description?: string;
-  type: 'task' | 'exam' | 'quiz';
+  assignmentType: 'task' | 'exam' | 'quiz';
   dueDate?: string;
   maxScore?: number;
   quizData?: QuizData;
@@ -564,7 +564,7 @@ export function useCreateAssignment() {
           course_id: params.courseId,
           title: params.title,
           description: params.description,
-          type: params.type,
+          assignment_type: params.assignmentType,
           due_date: params.dueDate,
           max_score: params.maxScore || 100,
           quiz_data: params.quizData,

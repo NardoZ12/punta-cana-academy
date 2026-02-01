@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS assignments (
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT,
-    type VARCHAR(20) NOT NULL CHECK (type IN ('task', 'exam', 'quiz')),
+    assignment_type VARCHAR(20) NOT NULL CHECK (assignment_type IN ('task', 'exam', 'quiz')),
     due_date TIMESTAMP WITH TIME ZONE,
     max_score INTEGER DEFAULT 100,
     quiz_data JSONB, -- Para exámenes: contiene preguntas y respuestas correctas
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 -- Índices para mejor rendimiento
 CREATE INDEX IF NOT EXISTS idx_assignments_course_id ON assignments(course_id);
-CREATE INDEX IF NOT EXISTS idx_assignments_type ON assignments(type);
+CREATE INDEX IF NOT EXISTS idx_assignments_type ON assignments(assignment_type);
 CREATE INDEX IF NOT EXISTS idx_assignments_due_date ON assignments(due_date);
 CREATE INDEX IF NOT EXISTS idx_submissions_assignment_id ON submissions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_student_id ON submissions(student_id);
@@ -312,20 +312,22 @@ BEGIN
         -- Buscar la respuesta del estudiante para esta pregunta
         SELECT answer INTO v_student_answer
         FROM (
-            SELECT elem->>'question_id' as qid, elem->'answer' as answer
-            FROM jsonb_array_elements(v_student_answers->'answers') elem
+            SELECT elem->>'question_id' AS qid, elem->'answer' AS answer
+            FROM jsonb_array_elements(COALESCE(v_student_answers->'answers', '[]'::jsonb)) elem
         ) answers
         WHERE qid = v_question->>'id';
 
         -- Verificar respuesta según tipo de pregunta
-        IF v_question->>'type' = 'multiple_choice' OR v_question->>'type' = 'true_false' THEN
-            IF v_student_answer = v_question->'correct_answer' THEN
+        IF (v_question->>'type') = 'multiple_choice' OR (v_question->>'type') = 'true_false' THEN
+            -- Comparar JSONB values directamente
+            IF v_student_answer IS NOT NULL AND v_student_answer = v_question->'correct_answer' THEN
                 v_total_score := v_total_score + (v_question->>'points')::INTEGER;
             END IF;
-        ELSIF v_question->>'type' = 'multiple_select' THEN
-            -- Para selección múltiple, comparar arrays
-            IF v_student_answer @> v_question->'correct_answers' 
-               AND v_question->'correct_answers' @> v_student_answer THEN
+        ELSIF (v_question->>'type') = 'multiple_select' THEN
+            -- Para selección múltiple, comparar arrays con operadores de contención
+            IF v_student_answer IS NOT NULL
+               AND (v_student_answer @> v_question->'correct_answers') 
+               AND (v_question->'correct_answers' @> v_student_answer) THEN
                 v_total_score := v_total_score + (v_question->>'points')::INTEGER;
             END IF;
         END IF;
@@ -338,7 +340,8 @@ BEGIN
         answers = jsonb_set(
             COALESCE(answers, '{}'::jsonb),
             '{auto_score}',
-            to_jsonb(v_total_score)
+            to_jsonb(v_total_score),
+            true
         ),
         updated_at = NOW()
     WHERE id = p_submission_id;
@@ -374,7 +377,7 @@ CREATE TRIGGER update_submissions_updated_at
 
 -- Insertar una asignación de ejemplo (task)
 /*
-INSERT INTO assignments (course_id, title, description, type, due_date, max_score, is_published, file_requirements)
+INSERT INTO assignments (course_id, title, description, assignment_type, due_date, max_score, is_published, file_requirements)
 VALUES (
     'YOUR_COURSE_ID',
     'Proyecto Final: Crear una Página Web',
@@ -391,7 +394,7 @@ VALUES (
 );
 
 -- Insertar una asignación de ejemplo (exam)
-INSERT INTO assignments (course_id, title, description, type, due_date, max_score, is_published, quiz_data)
+INSERT INTO assignments (course_id, title, description, assignment_type, due_date, max_score, is_published, quiz_data)
 VALUES (
     'YOUR_COURSE_ID',
     'Examen Parcial - Fundamentos de Programación',

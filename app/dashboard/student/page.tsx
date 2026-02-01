@@ -10,35 +10,39 @@ import {
   BookOpen, 
   CheckCircle, 
   Clock, 
-  Calendar,
   Target,
   Play,
   BarChart3,
   Trophy,
   Star,
-  Bell
+  Bell,
+  AlertTriangle
 } from 'lucide-react'
 
 function StudentDashboard() {
   const { user, profile } = useAuthContext()
   
   // Usar los hooks para obtener datos
-  const { data: enrollments = [], isLoading: enrollmentsLoading } = useStudentEnrollments(profile?.id)
+  // Agregamos fallback a [] por si el hook falla o devuelve undefined
+  const { data: enrollments = [], isLoading: enrollmentsLoading, error: enrollmentsError } = useStudentEnrollments(profile?.id)
   const { data: stats, isLoading: statsLoading } = useStudentStats(profile?.id)
   
-  // Hook en tiempo real para el dashboard del estudiante
-  const { courses: realtimeCourses, tasks: realtimeTasks, grades: realtimeGrades } = useRealtimeStudentDashboard()
+  // Hook en tiempo real
+  const { courses: realtimeCourses = [], tasks: realtimeTasks = [], grades: realtimeGrades = [] } = useRealtimeStudentDashboard()
 
   const loading = enrollmentsLoading || statsLoading
 
-  // Cursos en progreso
-  const inProgressCourses = enrollments.filter(e => e.status === 'active')
+  // LOGICA SEGURA: Extraer el primer nombre del full_name
+  const displayName = profile?.full_name ? profile.full_name.split(' ')[0] : 'Estudiante';
+
+  // Cursos en progreso (Validamos que e.status exista)
+  const inProgressCourses = enrollments?.filter(e => e.status === 'active' || e.status === 'in_progress') || []
   
   // Cursos completados
-  const completedCourses = enrollments.filter(e => e.status === 'completed')
+  const completedCourses = enrollments?.filter(e => e.status === 'completed') || []
   
-  // Progreso general
-  const overallProgress = enrollments.length > 0 
+  // Progreso general (Validación anti-crash división por cero)
+  const overallProgress = (enrollments?.length || 0) > 0 
     ? Math.round((completedCourses.length / enrollments.length) * 100)
     : 0
 
@@ -47,9 +51,25 @@ function StudentDashboard() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando dashboard...</p>
+          <p className="mt-4 text-gray-600 animate-pulse">Cargando tu aprendizaje...</p>
         </div>
       </div>
+    )
+  }
+
+  // Manejo de error si los hooks fallan
+  if (enrollmentsError) {
+    return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md">
+                <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4"/>
+                <h2 className="text-xl font-bold mb-2">Algo salió mal al cargar tus cursos</h2>
+                <p className="text-gray-500 mb-6">No pudimos sincronizar tus datos. Verifica tu conexión.</p>
+                <button onClick={() => window.location.reload()} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+                    Recargar Página
+                </button>
+            </div>
+        </div>
     )
   }
 
@@ -58,22 +78,22 @@ function StudentDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                ¡Hola, {profile?.first_name}!
+                ¡Hola, {displayName}! 👋
               </h1>
               <p className="text-gray-600 mt-1">
                 Bienvenido a tu dashboard de estudiante
               </p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 bg-indigo-50 p-3 rounded-xl">
               <div className="text-right">
                 <p className="text-sm text-gray-500">Progreso general</p>
                 <p className="text-2xl font-bold text-indigo-600">{overallProgress}%</p>
               </div>
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center">
-                <Trophy className="h-8 w-8 text-indigo-600" />
+              <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
+                <Trophy className="h-6 w-6 text-indigo-600" />
               </div>
             </div>
           </div>
@@ -81,19 +101,19 @@ function StudentDashboard() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
             <div className="flex items-center">
               <div className="p-2 bg-blue-100 rounded-lg">
                 <BookOpen className="h-6 w-6 text-blue-600" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Cursos</p>
-                <p className="text-2xl font-bold text-gray-900">{stats?.totalCourses || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats?.totalCourses || enrollments.length || 0}</p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
             <div className="flex items-center">
               <div className="p-2 bg-green-100 rounded-lg">
                 <CheckCircle className="h-6 w-6 text-green-600" />
@@ -101,116 +121,50 @@ function StudentDashboard() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Completados</p>
                 <div className="flex items-center space-x-2">
-                  <p className="text-2xl font-bold text-gray-900">{stats?.completedCourses || 0}</p>
-                  {realtimeCourses.filter(c => c.status === 'completed').length > 0 && (
-                    <div className="flex items-center text-green-600">
-                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-1"></div>
-                      <span className="text-xs">nuevo</span>
-                    </div>
-                  )}
+                  <p className="text-2xl font-bold text-gray-900">{stats?.completedCourses || completedCourses.length || 0}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500">
             <div className="flex items-center">
               <div className="p-2 bg-yellow-100 rounded-lg">
                 <Clock className="h-6 w-6 text-yellow-600" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">En Progreso</p>
-                <p className="text-2xl font-bold text-gray-900">{stats?.inProgressCourses || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">{stats?.inProgressCourses || inProgressCourses.length || 0}</p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
             <div className="flex items-center">
               <div className="p-2 bg-purple-100 rounded-lg">
                 <Target className="h-6 w-6 text-purple-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Calificaciones</p>
-                <div className="flex items-center space-x-2">
-                  <p className="text-2xl font-bold text-gray-900">85%</p>
-                  {realtimeGrades.length > 0 && (
-                    <div className="flex items-center text-purple-600">
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse mr-1"></div>
-                      <span className="text-xs">+{realtimeGrades.length}</span>
-                    </div>
-                  )}
-                </div>
+                <p className="text-sm font-medium text-gray-600">Promedio</p>
+                <p className="text-2xl font-bold text-gray-900">--</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Actividad en Tiempo Real */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-              <Bell className="h-5 w-5 mr-2 text-indigo-600" />
-              Actualizaciones en Tiempo Real
-            </h2>
-            <div className="flex items-center text-green-600">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2"></div>
-              <span className="text-sm">En vivo</span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Nuevas tareas */}
-            <div className="bg-blue-50 rounded-lg p-4">
-              <h3 className="font-medium text-blue-900 mb-2">Nuevas Tareas</h3>
-              <div className="space-y-2">
-                {realtimeTasks.slice(0, 4).map((task, index) => (
-                  <div key={index} className="flex items-center text-sm text-blue-700">
-                    <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
-                    <span className="flex-1">{task.title}</span>
-                    <span className="text-xs text-blue-600">
-                      {new Date(task.created_at).toLocaleTimeString()}
-                    </span>
-                  </div>
-                ))}
-                {realtimeTasks.length === 0 && (
-                  <p className="text-sm text-blue-600">Sin tareas nuevas</p>
-                )}
-              </div>
-            </div>
-
-            {/* Calificaciones actualizadas */}
-            <div className="bg-green-50 rounded-lg p-4">
-              <h3 className="font-medium text-green-900 mb-2">Calificaciones Recientes</h3>
-              <div className="space-y-2">
-                {realtimeGrades.slice(0, 4).map((grade, index) => (
-                  <div key={index} className="flex items-center text-sm text-green-700">
-                    <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
-                    <span className="flex-1">Calificación: {grade.score}/100</span>
-                    <span className="text-xs text-green-600">
-                      {new Date(grade.updated_at).toLocaleTimeString()}
-                    </span>
-                  </div>
-                ))}
-                {realtimeGrades.length === 0 && (
-                  <p className="text-sm text-green-600">Sin calificaciones nuevas</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
+        {/* Contenido Principal */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Cursos en Progreso */}
-          <div className="lg:col-span-2">
+          {/* Columna Izquierda: Cursos en Progreso */}
+          <div className="lg:col-span-2 space-y-8">
             <div className="bg-white rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-900">Cursos en Progreso</h2>
+                <Link href="/dashboard/student/courses" className="text-sm text-indigo-600 hover:underline">Ver todos</Link>
               </div>
               <div className="p-6">
                 {inProgressCourses.length === 0 ? (
-                  <div className="text-center py-12">
-                    <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                    <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
                       No tienes cursos en progreso
                     </h3>
@@ -229,17 +183,19 @@ function StudentDashboard() {
                     {inProgressCourses.map((enrollment) => (
                       <div 
                         key={enrollment.id} 
-                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow gap-4"
                       >
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900">
-                            {enrollment.course.title}
+                            {enrollment.course?.title || 'Curso sin título'}
                           </h3>
+                          {/* CORRECCIÓN: Usamos full_name para el instructor y validamos existencia */}
                           <p className="text-sm text-gray-600 mt-1">
-                            Instructor: {enrollment.course.instructor?.first_name} {enrollment.course.instructor?.last_name}
+                            Instructor: {enrollment.course?.instructor?.full_name || 'Punta Cana Academy'}
                           </p>
-                          <div className="flex items-center mt-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 mr-3">
+                          
+                          <div className="flex items-center mt-3">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 mr-3 max-w-[200px]">
                               <div 
                                 className="bg-indigo-600 h-2 rounded-full" 
                                 style={{ width: `${enrollment.progress || 0}%` }}
@@ -250,12 +206,12 @@ function StudentDashboard() {
                             </span>
                           </div>
                         </div>
-                        <div className="ml-6">
+                        <div className="flex-shrink-0">
                           <Link 
-                            href={`/dashboard/student/course/${enrollment.course.id}`}
-                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors"
+                            href={`/dashboard/student/course/${enrollment.course?.id}`}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors w-full justify-center sm:w-auto"
                           >
-                            <Play className="h-4 w-4 mr-1" />
+                            <Play className="h-4 w-4 mr-2" />
                             Continuar
                           </Link>
                         </div>
@@ -267,70 +223,91 @@ function StudentDashboard() {
             </div>
           </div>
 
-          {/* Sidebar */}
+          {/* Columna Derecha: Sidebar */}
           <div className="space-y-6">
+            
+            {/* Actividad en Tiempo Real (Simplificada para evitar crashes) */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <Bell className="h-5 w-5 mr-2 text-indigo-600" />
+                    Actividad Reciente
+                    </h2>
+                    <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                </div>
+                
+                <div className="space-y-4">
+                    {/* Tareas */}
+                    <div className="bg-blue-50 rounded-lg p-3">
+                        <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wide mb-2">Nuevas Tareas</h3>
+                        {realtimeTasks && realtimeTasks.length > 0 ? (
+                             realtimeTasks.slice(0,3).map((t, i) => (
+                                <div key={i} className="text-sm text-blue-700 truncate">• {t.title}</div>
+                             ))
+                        ) : (
+                            <p className="text-xs text-blue-500">No hay tareas pendientes</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             {/* Acciones Rápidas */}
-            <div className="bg-white rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200">
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
                 <h2 className="text-lg font-semibold text-gray-900">Acciones Rápidas</h2>
               </div>
-              <div className="p-6 space-y-3">
+              <div className="p-4 space-y-2">
                 <Link 
                   href="/cursos"
-                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors group"
                 >
-                  <BookOpen className="h-5 w-5 mr-3 text-gray-400" />
-                  Explorar Cursos
+                  <div className="p-2 bg-indigo-100 rounded-lg mr-3 group-hover:bg-indigo-200 transition-colors">
+                     <BookOpen className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  Explorar Catálogo
                 </Link>
                 <Link 
                   href="/dashboard/student/courses"
-                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors group"
                 >
-                  <BarChart3 className="h-5 w-5 mr-3 text-gray-400" />
+                   <div className="p-2 bg-green-100 rounded-lg mr-3 group-hover:bg-green-200 transition-colors">
+                     <BarChart3 className="h-5 w-5 text-green-600" />
+                   </div>
                   Mis Cursos
                 </Link>
                 <Link 
                   href="/dashboard/student/settings"
-                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors group"
                 >
-                  <Target className="h-5 w-5 mr-3 text-gray-400" />
+                   <div className="p-2 bg-gray-100 rounded-lg mr-3 group-hover:bg-gray-200 transition-colors">
+                     <Target className="h-5 w-5 text-gray-600" />
+                   </div>
                   Configuración
                 </Link>
               </div>
             </div>
 
-            {/* Logros Recientes */}
-            <div className="bg-white rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Logros Recientes</h2>
-              </div>
-              <div className="p-6">
-                {completedCourses.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Star className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-sm text-gray-500">
-                      Aún no tienes logros. ¡Completa tu primer curso!
-                    </p>
-                  </div>
+            {/* Logros (Simplificado) */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Últimos Logros</h2>
+                {completedCourses.length > 0 ? (
+                    completedCourses.slice(0,3).map((e, i) => (
+                        <div key={i} className="flex items-center gap-3 mb-3">
+                            <Star className="text-yellow-400 h-5 w-5" />
+                            <span className="text-sm font-medium">{e.course?.title}</span>
+                        </div>
+                    ))
                 ) : (
-                  <div className="space-y-3">
-                    {completedCourses.slice(0, 3).map((enrollment) => (
-                      <div key={enrollment.id} className="flex items-center">
-                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                          <CheckCircle className="h-5 w-5 text-green-600" />
-                        </div>
-                        <div className="ml-3">
-                          <p className="text-sm font-medium text-gray-900">
-                            {enrollment.course.title}
-                          </p>
-                          <p className="text-xs text-gray-500">Completado</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    <div className="text-center py-4">
+                        <Trophy className="h-10 w-10 text-gray-300 mx-auto mb-2"/>
+                        <p className="text-xs text-gray-400">Completa cursos para ganar insignias</p>
+                    </div>
                 )}
-              </div>
             </div>
+
           </div>
         </div>
       </div>
@@ -338,5 +315,8 @@ function StudentDashboard() {
   )
 }
 
-// Exportar con protección de autenticación
-export default withAuth(StudentDashboard, ['student'])
+// Exportar con protección
+export default withAuth(StudentDashboard, { 
+  requireAuth: true, 
+  requireRole: 'student' 
+})

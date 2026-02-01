@@ -172,13 +172,12 @@ export default function CoursesPage() {
                   <div className="flex items-center mb-4">
                     <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center mr-3">
                       <span className="text-sm font-medium text-gray-600">
-                        {course.instructor?.first_name?.[0]}
-                        {course.instructor?.last_name?.[0]}
+                        {course.instructor?.full_name ? course.instructor.full_name.charAt(0).toUpperCase() : 'I'}
                       </span>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">
-                        {course.instructor?.first_name} {course.instructor?.last_name}
+                        {course.instructor?.full_name || 'Instructor'}
                       </p>
                       <p className="text-xs text-gray-500">Instructor</p>
                     </div>

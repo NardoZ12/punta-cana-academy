@@ -2,6 +2,9 @@
 export interface Profile {
   id: string
   full_name?: string
+  first_name?: string
+  last_name?: string
+  email?: string
   avatar_url?: string
   bio?: string
   phone?: string
@@ -60,10 +63,12 @@ export interface Enrollment {
   id: string
   student_id: string
   course_id: string
-  enrollment_date: string
+  enrollment_date?: string
+  enrolled_at?: string
   completion_date?: string
-  progress_percentage: number
-  status: 'active' | 'completed' | 'dropped' | 'suspended'
+  progress_percentage?: number
+  progress?: number
+  status: 'active' | 'completed' | 'dropped' | 'suspended' | 'in_progress'
   grade?: number
   created_at: string
   updated_at?: string

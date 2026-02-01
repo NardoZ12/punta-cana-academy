@@ -30,7 +30,7 @@ export function useCourse(courseId: string) {
         .from('courses')
         .select(`
           *,
-          instructor:profiles(id, first_name, last_name, email),
+          instructor:profiles(id, full_name, email),
           lessons:course_lessons(*)
         `)
         .eq('id', courseId)
@@ -63,7 +63,7 @@ export function useInstructorCourses(instructorId?: string) {
       if (data && data.length > 0) {
         const { data: instructorData } = await supabase
           .from('profiles')
-          .select('id, full_name, first_name, last_name, email')
+          .select('id, full_name, email')
           .eq('id', instructorId)
           .single()
         
@@ -94,7 +94,7 @@ export function useStudentEnrollments(studentId?: string) {
           *,
           course:courses(
             *,
-            instructor:profiles(first_name, last_name)
+            instructor:profiles(full_name)
           )
         `)
         .eq('student_id', studentId)

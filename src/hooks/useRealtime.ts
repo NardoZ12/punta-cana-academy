@@ -465,8 +465,13 @@ export function useRealtimeStudentDashboard() {
       }, async (payload) => {
         const newTask = payload.new;
         
-        // Verificar si el estudiante está inscrito en el curso
-        const isEnrolled = enrollments.some(e => e.course_id === newTask.course_id);
+        // Obtener inscripciones actuales para verificar
+        const { data: currentEnrollments } = await supabase
+          .from('enrollments')
+          .select('course_id')
+          .eq('student_id', user.id);
+        
+        const isEnrolled = currentEnrollments?.some(e => e.course_id === newTask.course_id);
         
         if (isEnrolled) {
           const { data: taskWithCourse } = await supabase
@@ -514,7 +519,7 @@ export function useRealtimeStudentDashboard() {
       supabase.removeChannel(tasksChannel);
       supabase.removeChannel(gradesChannel);
     };
-  }, [user, supabase, enrollments]);
+  }, [user?.id, supabase]); // Quitar enrollments de las dependencias para evitar loop infinito
 
   const enrollInCourse = async (courseId: string) => {
     const { data, error } = await supabase
@@ -539,7 +544,7 @@ export function useRealtimeStudentDashboard() {
   };
 
   return { 
-    enrollments, 
+    courses: enrollments, // Cambiar a courses para que coincida con el dashboard
     tasks, 
     grades, 
     loading, 

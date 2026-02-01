@@ -49,7 +49,7 @@ export default function TeacherDashboard() {
         const { data: coursesData, error: coursesError } = await supabase
           .from('courses')
           .select('*')
-          .eq('teacher_id', user.id); // Asumiendo que usas teacher_id o user_id
+          .eq('instructor_id', user.id);
 
         if (coursesError) throw coursesError;
         if (coursesData) setCourses(coursesData);

@@ -38,7 +38,7 @@ export default function CreateCoursePage() {
           level: formData.level,
           modality: formData.modality,
           schedule: formData.schedule,
-          teacher_id: user.id,
+          instructor_id: user.id,
           image_url: '/images/courses/default-course.jpg', // Imagen por defecto temporal
           is_published: true
         });

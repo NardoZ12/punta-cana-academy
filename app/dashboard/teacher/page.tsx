@@ -155,7 +155,7 @@ export default function TeacherDashboard() {
                        <span className={`text-xs px-2 py-1 rounded ${course.is_published ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'}`}>
                          {course.is_published ? 'Publicado' : 'Borrador'}
                        </span>
-                       <Link href={`/dashboard/teacher/course/${course.id}`}>
+                       <Link href={`/dashboard/teacher/course/${course.id}/edit`}>
                          <span className="text-cyan-400 text-sm hover:underline cursor-pointer">Gestionar →</span>
                        </Link>
                     </div>

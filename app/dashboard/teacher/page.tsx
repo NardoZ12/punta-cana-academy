@@ -8,82 +8,82 @@ import { createClient } from '@/utils/supabase/client';
 export default function TeacherDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [teacherName, setTeacherName] = useState('');
-  
-  // Datos del dashboard
+  const [teacherName, setTeacherName] = useState('Profesor');
   const [courses, setCourses] = useState<any[]>([]);
 
   useEffect(() => {
+    let mounted = true;
+    const supabase = createClient();
+    
     async function loadTeacherData() {
-      const supabase = createClient();
-      
       try {
-        setLoading(true);
-        console.log('🔵 Teacher Dashboard: Iniciando carga...');
-        
-        // 1. Verificar Usuario
+        // 1. Obtener usuario con timeout
         const { data: { user }, error: userError } = await supabase.auth.getUser();
-        console.log('🔵 Teacher Dashboard: Usuario obtenido:', user?.id, userError?.message);
+        
+        if (!mounted) return;
         
         if (userError || !user) {
-           console.log('🔵 Teacher Dashboard: No hay usuario, redirigiendo...');
            window.location.href = '/login';
            return;
         }
 
-        // 2. Verificar Perfil
-        console.log('🔵 Teacher Dashboard: Obteniendo perfil...');
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('full_name, user_type') 
-          .eq('id', user.id)
-          .single();
+        // 2. Cargar perfil y cursos en paralelo para mayor velocidad
+        const [profileResult, coursesResult] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('full_name, user_type') 
+            .eq('id', user.id)
+            .single(),
+          supabase
+            .from('courses')
+            .select('id, title, description, image_url, is_published, created_at')
+            .eq('instructor_id', user.id)
+            .order('created_at', { ascending: false })
+        ]);
 
-        console.log('🔵 Teacher Dashboard: Perfil:', profile, profileError?.message);
+        if (!mounted) return;
 
-        if (profileError) {
-          console.error('🔴 Error obteniendo perfil:', profileError);
-          setError(`Error obteniendo perfil: ${profileError.message}`);
+        // Verificar perfil
+        if (profileResult.error) {
+          setError(`Error obteniendo perfil: ${profileResult.error.message}`);
           setLoading(false);
           return;
         }
         
-        // Validación de seguridad extra
-        if (profile?.user_type !== 'teacher') {
-           console.log('🔵 Teacher Dashboard: Usuario no es profesor:', profile?.user_type);
-           setError(`No tienes permisos de profesor. Tu rol es: ${profile?.user_type || 'desconocido'}`);
+        if (profileResult.data?.user_type !== 'teacher') {
+           setError(`No tienes permisos de profesor. Tu rol es: ${profileResult.data?.user_type || 'desconocido'}`);
            setLoading(false);
            return;
         }
 
-        setTeacherName(profile.full_name || 'Profesor');
-
-        // 3. Cargar Cursos del Profesor
-        console.log('🔵 Teacher Dashboard: Cargando cursos...');
-        const { data: coursesData, error: coursesError } = await supabase
-          .from('courses')
-          .select('*')
-          .eq('instructor_id', user.id);
-
-        console.log('🔵 Teacher Dashboard: Cursos:', coursesData?.length, coursesError?.message);
-
-        if (coursesError) {
-          console.error('🔴 Error obteniendo cursos:', coursesError);
-          // No es error crítico, continuamos sin cursos
-        }
-        
-        setCourses(coursesData || []);
-        console.log('🟢 Teacher Dashboard: Carga completada');
+        setTeacherName(profileResult.data.full_name || 'Profesor');
+        setCourses(coursesResult.data || []);
 
       } catch (err: any) {
-        console.error("🔴 Error cargando dashboard:", err);
-        setError(`Error inesperado: ${err.message}`);
+        if (mounted) {
+          setError(`Error inesperado: ${err.message}`);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadTeacherData();
+    
+    // Timeout de seguridad - si después de 10 segundos no carga, mostrar error
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        setError('La conexión está tardando demasiado. Intenta recargar la página.');
+        setLoading(false);
+      }
+    }, 10000);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   // --- RENDERIZADO ---

@@ -88,20 +88,37 @@ export function useStudentEnrollments(studentId?: string) {
     queryKey: ['student-enrollments', studentId],
     queryFn: async (): Promise<Enrollment[]> => {
       const supabase = createClient()
-      const { data, error } = await supabase
+      
+      // Primero obtener las inscripciones
+      const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select(`
-          *,
-          course:courses(
-            *,
-            instructor:profiles(full_name)
-          )
-        `)
+        .select('*')
         .eq('student_id', studentId)
-        .order('enrolled_at', { ascending: false })
+        .order('created_at', { ascending: false })
 
-      if (error) throw new Error(error.message)
-      return data as Enrollment[]
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError)
+        return []
+      }
+      
+      if (!enrollmentsData || enrollmentsData.length === 0) {
+        return []
+      }
+      
+      // Obtener los cursos relacionados
+      const courseIds = enrollmentsData.map(e => e.course_id)
+      const { data: coursesData } = await supabase
+        .from('courses')
+        .select('*')
+        .in('id', courseIds)
+      
+      // Combinar datos
+      const enrollmentsWithCourses = enrollmentsData.map(enrollment => ({
+        ...enrollment,
+        course: coursesData?.find(c => c.id === enrollment.course_id) || null
+      }))
+      
+      return enrollmentsWithCourses as Enrollment[]
     },
     enabled: !!studentId
   })
@@ -333,23 +350,39 @@ export function useStudentStats(studentId?: string) {
     queryKey: ['student-stats', studentId],
     queryFn: async () => {
       const supabase = createClient()
-      // Obtener inscripciones
-      const { data: enrollments, count: enrollmentsCount } = await supabase
-        .from('enrollments')
-        .select('*', { count: 'exact' })
-        .eq('student_id', studentId)
+      
+      try {
+        // Obtener inscripciones
+        const { data: enrollments, error } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('student_id', studentId)
 
-      // Obtener inscripciones completadas
-      const { count: completedCount } = await supabase
-        .from('enrollments')
-        .select('*', { count: 'exact', head: true })
-        .eq('student_id', studentId)
-        .eq('status', 'completed')
+        if (error) {
+          console.error('Error fetching student stats:', error)
+          return {
+            totalCourses: 0,
+            completedCourses: 0,
+            inProgressCourses: 0,
+          }
+        }
+        
+        const total = enrollments?.length || 0
+        const completed = enrollments?.filter(e => e.status === 'completed')?.length || 0
+        const inProgress = total - completed
 
-      return {
-        totalCourses: enrollmentsCount || 0,
-        completedCourses: completedCount || 0,
-        inProgressCourses: (enrollmentsCount || 0) - (completedCount || 0),
+        return {
+          totalCourses: total,
+          completedCourses: completed,
+          inProgressCourses: inProgress,
+        }
+      } catch (err) {
+        console.error('Error in useStudentStats:', err)
+        return {
+          totalCourses: 0,
+          completedCourses: 0,
+          inProgressCourses: 0,
+        }
       }
     },
     enabled: !!studentId

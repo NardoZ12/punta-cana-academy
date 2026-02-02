@@ -71,18 +71,9 @@ export default function TeacherDashboard() {
     }
 
     loadTeacherData();
-    
-    // Timeout de seguridad - si después de 10 segundos no carga, mostrar error
-    const timeout = setTimeout(() => {
-      if (mounted && loading) {
-        setError('La conexión está tardando demasiado. Intenta recargar la página.');
-        setLoading(false);
-      }
-    }, 10000);
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
     };
   }, []);
 

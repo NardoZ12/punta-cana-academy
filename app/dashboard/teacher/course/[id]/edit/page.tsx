@@ -9,6 +9,8 @@ import {
   BookOpen, Video, FileText, Presentation, Plus, Trash2, Edit2, 
   ChevronDown, ChevronRight, GripVertical, X, Upload, Clock, File
 } from 'lucide-react';
+import TopicResourceEditor, { TopicResourceData } from '@/components/teacher/TopicResourceEditor';
+import { getVideoInfo } from '@/utils/videoEmbed';
 
 // Tipos
 interface CourseUnit {
@@ -224,29 +226,49 @@ export default function EditCoursePage() {
     if (!error) setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
   };
 
-  const handleSaveResources = async () => {
-    if (!editingResources) return;
-    const { topic, resources } = editingResources;
-    const { data: existing } = await supabase.from('topic_resources').select('id').eq('topic_id', topic.id).single();
+  const handleSaveResources = async (topicId: string, data: TopicResourceData) => {
+    const topic = editingResources?.topic;
+    if (!topic) return;
+    
+    // Extraer video principal y adicionales
+    const mainVideo = data.videos[0];
+    const additionalVideos = data.videos.slice(1);
+    const pdfDoc = data.documents.find(d => d.type === 'pdf');
+    const slidesDoc = data.documents.find(d => d.type === 'slides');
+    
+    const { data: existing } = await supabase.from('topic_resources').select('id').eq('topic_id', topicId).single();
+    
     const payload = {
-      introduction: resources.introduction || '', introduction_format: resources.introduction_format || 'markdown',
-      video_url: resources.video_url || null, video_provider: resources.video_provider || null,
-      video_duration_seconds: resources.video_duration_seconds || null,
-      pdf_url: resources.pdf_url || null, pdf_title: resources.pdf_title || null,
-      slides_url: resources.slides_url || null, slides_provider: resources.slides_provider || null,
-      is_published: resources.is_published || false
+      introduction: data.introduction || '',
+      introduction_format: data.introduction_format || 'markdown',
+      video_url: mainVideo?.url || null,
+      video_provider: mainVideo?.provider || null,
+      video_duration_seconds: mainVideo?.duration_seconds || null,
+      pdf_url: pdfDoc?.url || null,
+      pdf_title: pdfDoc?.title || null,
+      slides_url: slidesDoc?.url || null,
+      slides_provider: slidesDoc?.provider || null,
+      is_published: data.is_published || false,
+      // Guardar videos adicionales y quiz como JSON
+      additional_resources: JSON.stringify({
+        videos: additionalVideos,
+        quiz: data.quiz
+      })
     };
+    
     let result;
     if (existing) {
       result = await supabase.from('topic_resources').update(payload).eq('id', existing.id).select().single();
     } else {
-      result = await supabase.from('topic_resources').insert({ topic_id: topic.id, unit_id: topic.unit_id, course_id: courseId, ...payload }).select().single();
+      result = await supabase.from('topic_resources').insert({ topic_id: topicId, unit_id: topic.unit_id, course_id: courseId, ...payload }).select().single();
     }
+    
     if (!result.error && result.data) {
-      setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? { ...t, resources: result.data as TopicResources } : t) })));
+      setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: result.data as TopicResources } : t) })));
       setEditingResources(null);
-      alert('✓ Recursos guardados');
-    } else alert('Error: ' + result.error?.message);
+    } else {
+      throw new Error(result.error?.message || 'Error al guardar');
+    }
   };
 
   const toggleUnit = (unitId: string) => {
@@ -603,135 +625,43 @@ export default function EditCoursePage() {
         </div>
       )}
 
-      {/* Modal: Edit Resources */}
+      {/* Modal: Edit Resources - Nuevo Editor Rico */}
       {editingResources && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800 flex-shrink-0">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Recursos del Tema</h2>
-                <p className="text-sm text-gray-400">{editingResources.topic.title}</p>
-              </div>
-              <button onClick={() => setEditingResources(null)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-6">
-              {/* Introduction */}
-              <div className="bg-[#030712] border border-gray-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <FileText className="w-5 h-5 text-cyan-400" />
-                  <h3 className="font-medium text-white">Introducción</h3>
-                </div>
-                <textarea 
-                  value={editingResources.resources.introduction || ''} 
-                  onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, introduction: e.target.value } })} 
-                  rows={4} 
-                  className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none resize-none text-sm" 
-                  placeholder="Introducción al tema (Markdown soportado)..." />
-              </div>
-
-              {/* Video */}
-              <div className="bg-[#030712] border border-gray-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Video className="w-5 h-5 text-blue-400" />
-                  <h3 className="font-medium text-white">Video</h3>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Proveedor</label>
-                    <select 
-                      value={editingResources.resources.video_provider || 'youtube'} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, video_provider: e.target.value } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none">
-                      {VIDEO_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">URL del video</label>
-                    <input type="text" 
-                      value={editingResources.resources.video_url || ''} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, video_url: e.target.value } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none" 
-                      placeholder="https://youtube.com/watch?v=..." />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Duración (segundos)</label>
-                    <input type="number" 
-                      value={editingResources.resources.video_duration_seconds || ''} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, video_duration_seconds: parseInt(e.target.value) || 0 } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none" 
-                      placeholder="600" />
-                  </div>
-                </div>
-              </div>
-
-              {/* PDF */}
-              <div className="bg-[#030712] border border-gray-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <File className="w-5 h-5 text-orange-400" />
-                  <h3 className="font-medium text-white">Material PDF</h3>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Título del PDF</label>
-                    <input type="text" 
-                      value={editingResources.resources.pdf_title || ''} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, pdf_title: e.target.value } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none" 
-                      placeholder="Material de lectura" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">URL del PDF</label>
-                    <input type="text" 
-                      value={editingResources.resources.pdf_url || ''} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, pdf_url: e.target.value } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none" 
-                      placeholder="https://..." />
-                  </div>
-                </div>
-              </div>
-
-              {/* Slides */}
-              <div className="bg-[#030712] border border-gray-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Presentation className="w-5 h-5 text-purple-400" />
-                  <h3 className="font-medium text-white">Diapositivas</h3>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Proveedor</label>
-                    <select 
-                      value={editingResources.resources.slides_provider || 'google_slides'} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, slides_provider: e.target.value } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none">
-                      {SLIDES_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">URL de las diapositivas</label>
-                    <input type="text" 
-                      value={editingResources.resources.slides_url || ''} 
-                      onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, slides_url: e.target.value } })} 
-                      className="w-full bg-[#0a0f1a] border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none" 
-                      placeholder="https://docs.google.com/presentation/..." />
-                  </div>
-                </div>
-              </div>
-
-              {/* Publish */}
-              <div className="flex items-center gap-3 pt-2">
-                <input type="checkbox" id="res-pub" 
-                  checked={editingResources.resources.is_published || false} 
-                  onChange={e => setEditingResources({ ...editingResources, resources: { ...editingResources.resources, is_published: e.target.checked } })} 
-                  className="w-4 h-4 accent-cyan-500" />
-                <label htmlFor="res-pub" className="text-sm text-gray-300">Publicar recursos (visible para estudiantes)</label>
-              </div>
-            </div>
-            <div className="flex gap-3 p-5 border-t border-gray-800 flex-shrink-0">
-              <button onClick={() => setEditingResources(null)} className="flex-1 bg-gray-800 text-white py-2.5 rounded-lg font-medium">Cancelar</button>
-              <button onClick={handleSaveResources} className="flex-1 bg-cyan-500 text-black py-2.5 rounded-lg font-medium">Guardar Recursos</button>
-            </div>
-          </div>
-        </div>
+        <TopicResourceEditor
+          topicId={editingResources.topic.id}
+          topicTitle={editingResources.topic.title}
+          unitId={editingResources.topic.unit_id}
+          courseId={courseId}
+          initialData={{
+            introduction: editingResources.resources.introduction || '',
+            introduction_format: (editingResources.resources.introduction_format as 'markdown' | 'html' | 'plain') || 'markdown',
+            videos: editingResources.resources.video_url ? [{
+              id: 'main',
+              url: editingResources.resources.video_url,
+              title: 'Video principal',
+              provider: (editingResources.resources.video_provider as 'youtube' | 'vimeo' | 'unknown') || 'youtube',
+              embedUrl: getVideoInfo(editingResources.resources.video_url || '').embedUrl,
+              duration_seconds: editingResources.resources.video_duration_seconds
+            }] : [],
+            documents: [
+              editingResources.resources.pdf_url ? {
+                type: 'pdf' as const,
+                url: editingResources.resources.pdf_url,
+                title: editingResources.resources.pdf_title || ''
+              } : null,
+              editingResources.resources.slides_url ? {
+                type: 'slides' as const,
+                url: editingResources.resources.slides_url,
+                title: '',
+                provider: (editingResources.resources.slides_provider as 'google_slides' | 'canva' | 'pdf' | 'custom') || 'google_slides'
+              } : null
+            ].filter(Boolean) as any[],
+            quiz: [],
+            is_published: editingResources.resources.is_published || false
+          }}
+          onSave={(data) => handleSaveResources(editingResources.topic.id, data)}
+          onClose={() => setEditingResources(null)}
+        />
       )}
     </div>
   );

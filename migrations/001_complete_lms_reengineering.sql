@@ -447,7 +447,7 @@ ALTER TABLE public.unit_progress ENABLE ROW LEVEL SECURITY;
 -- COURSE_UNITS policies
 DROP POLICY IF EXISTS "View units" ON public.course_units;
 CREATE POLICY "View units" ON public.course_units FOR SELECT USING (
-    is_published = true OR EXISTS (SELECT 1 FROM public.courses WHERE id = course_units.course_id AND instructor_id = auth.uid())
+    course_units.is_published = true OR EXISTS (SELECT 1 FROM public.courses WHERE id = course_units.course_id AND instructor_id = auth.uid())
 );
 
 DROP POLICY IF EXISTS "Manage units" ON public.course_units;
@@ -458,7 +458,7 @@ CREATE POLICY "Manage units" ON public.course_units FOR ALL USING (
 -- UNIT_TOPICS policies
 DROP POLICY IF EXISTS "View topics" ON public.unit_topics;
 CREATE POLICY "View topics" ON public.unit_topics FOR SELECT USING (
-    is_published = true OR EXISTS (SELECT 1 FROM public.courses WHERE id = unit_topics.course_id AND instructor_id = auth.uid())
+    unit_topics.is_published = true OR EXISTS (SELECT 1 FROM public.courses WHERE id = unit_topics.course_id AND instructor_id = auth.uid())
 );
 
 DROP POLICY IF EXISTS "Manage topics" ON public.unit_topics;
@@ -481,7 +481,7 @@ CREATE POLICY "Manage resources" ON public.topic_resources FOR ALL USING (
 -- EVALUATIONS policies
 DROP POLICY IF EXISTS "View evaluations" ON public.evaluations;
 CREATE POLICY "View evaluations" ON public.evaluations FOR SELECT USING (
-    (is_published = true AND EXISTS (SELECT 1 FROM public.enrollments WHERE course_id = evaluations.course_id AND student_id = auth.uid()))
+    (evaluations.is_published = true AND EXISTS (SELECT 1 FROM public.enrollments WHERE course_id = evaluations.course_id AND student_id = auth.uid()))
     OR EXISTS (SELECT 1 FROM public.courses WHERE id = evaluations.course_id AND instructor_id = auth.uid())
 );
 
@@ -503,7 +503,7 @@ CREATE POLICY "Instructors view attempts" ON public.evaluation_attempts FOR SELE
 DROP POLICY IF EXISTS "View assignments" ON public.assignments;
 CREATE POLICY "View assignments" ON public.assignments FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.courses WHERE id = assignments.course_id AND instructor_id = auth.uid())
-    OR (is_published = true AND (target_type = 'all_students' OR target_student_id = auth.uid()) AND EXISTS (SELECT 1 FROM public.enrollments WHERE course_id = assignments.course_id AND student_id = auth.uid()))
+    OR (assignments.is_published = true AND (assignments.target_type = 'all_students' OR assignments.target_student_id = auth.uid()) AND EXISTS (SELECT 1 FROM public.enrollments WHERE course_id = assignments.course_id AND student_id = auth.uid()))
 );
 
 DROP POLICY IF EXISTS "Manage assignments" ON public.assignments;

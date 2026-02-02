@@ -1,7 +1,7 @@
 'use client'
 
 import { useAuthContext } from '@/contexts/AuthContext'
-import { useStudentEnrollments, useStudentStats } from '@/hooks/useCourses'
+import { useStudentEnrollments, useStudentStats, useAllStudentAssignments, useAllStudentEvaluations } from '@/hooks/useCourses'
 import { useRealtimeStudentDashboard } from '@/hooks/useRealtime'
 import Link from 'next/link'
 import { 
@@ -17,7 +17,9 @@ import {
   Calendar,
   Award,
   Clock,
-  TrendingUp
+  TrendingUp,
+  ClipboardList,
+  FileText
 } from 'lucide-react'
 
 export default function StudentDashboard() {
@@ -25,15 +27,21 @@ export default function StudentDashboard() {
   
   const { data: enrollments = [], isLoading: enrollmentsLoading, error: enrollmentsError } = useStudentEnrollments(profile?.id)
   const { data: stats, isLoading: statsLoading } = useStudentStats(profile?.id)
+  const { data: assignments, isLoading: assignmentsLoading } = useAllStudentAssignments(profile?.id)
+  const { data: evaluations, isLoading: evaluationsLoading } = useAllStudentEvaluations(profile?.id)
   const { courses: realtimeCourses = [], tasks: realtimeTasks = [], grades: realtimeGrades = [] } = useRealtimeStudentDashboard()
 
-  const loading = enrollmentsLoading || statsLoading
+  const loading = enrollmentsLoading || statsLoading || assignmentsLoading || evaluationsLoading
   const displayName = profile?.full_name ? profile.full_name.split(' ')[0] : 'Estudiante'
   const inProgressCourses = enrollments?.filter((e: any) => e.status === 'active' || e.status === 'in_progress') || []
   const completedCourses = enrollments?.filter((e: any) => e.status === 'completed') || []
   const overallProgress = (enrollments?.length || 0) > 0 
     ? Math.round((completedCourses.length / enrollments.length) * 100)
     : 0
+    
+  // Combinar tareas pendientes de hooks y realtime
+  const pendingTasks = assignments?.pending || []
+  const pendingExams = evaluations?.pending || []
 
   if (loading) {
     return (
@@ -146,7 +154,7 @@ export default function StudentDashboard() {
                   {inProgressCourses.map((enrollment: any) => (
                     <Link 
                       key={enrollment.id} 
-                      href={`/dashboard/student/course/${enrollment.course_id}`}
+                      href={`/dashboard/student/course/${enrollment.course_id}/overview`}
                       className="block group"
                     >
                       <div className="bg-[#030712] border border-gray-800 hover:border-cyan-500/40 rounded-xl p-4 transition-all duration-200">
@@ -185,12 +193,17 @@ export default function StudentDashboard() {
             <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Target className="w-5 h-5 text-blue-400" />
+                  <Target className="w-5 h-5 text-orange-400" />
                   Tareas Pendientes
                 </h2>
+                {pendingTasks.length > 0 && (
+                  <span className="text-xs bg-orange-500/10 text-orange-400 px-3 py-1 rounded-full">
+                    {pendingTasks.length}
+                  </span>
+                )}
               </div>
 
-              {realtimeTasks.length === 0 ? (
+              {pendingTasks.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
                     <CheckCircle className="w-7 h-7 text-green-500" />
@@ -199,22 +212,93 @@ export default function StudentDashboard() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {realtimeTasks.slice(0, 5).map((task: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
-                      <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Calendar className="w-5 h-5 text-blue-400" />
+                  {pendingTasks.slice(0, 5).map((task: any, idx: number) => (
+                    <Link 
+                      key={task.id || idx} 
+                      href={`/dashboard/student/tasks/${task.id}`}
+                      className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-orange-500/30 transition-colors"
+                    >
+                      <div className="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-5 h-5 text-orange-400" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="text-sm font-medium text-white truncate">{task.title}</h4>
-                        <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Vence: {new Date(task.due_date).toLocaleDateString('es-ES')}
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                          {task.courses?.title || 'Curso'}
                         </p>
                       </div>
-                      <span className="text-xs bg-yellow-500/10 text-yellow-400 px-2.5 py-1 rounded-full font-medium">
-                        Pendiente
-                      </span>
-                    </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className="text-xs bg-orange-500/10 text-orange-400 px-2.5 py-1 rounded-full font-medium">
+                          {task.max_points} pts
+                        </span>
+                        {task.due_date && (
+                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1 justify-end">
+                            <Clock className="w-3 h-3" />
+                            {new Date(task.due_date).toLocaleDateString('es-ES')}
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* EVALUACIONES PENDIENTES */}
+            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5 text-purple-400" />
+                  Exámenes Pendientes
+                </h2>
+                {pendingExams.length > 0 && (
+                  <span className="text-xs bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full">
+                    {pendingExams.length}
+                  </span>
+                )}
+              </div>
+
+              {pendingExams.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle className="w-7 h-7 text-green-500" />
+                  </div>
+                  <p className="text-gray-400 text-sm">¡No tienes exámenes pendientes!</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingExams.slice(0, 4).map((exam: any, idx: number) => (
+                    <Link 
+                      key={exam.id || idx} 
+                      href={`/dashboard/student/exam/${exam.id}`}
+                      className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-purple-500/30 transition-colors"
+                    >
+                      <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <ClipboardList className="w-5 h-5 text-purple-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-medium text-white truncate">{exam.title}</h4>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                          {exam.courses?.title || 'Curso'}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                          exam.scope === 'topic_quiz' ? 'bg-blue-500/10 text-blue-400' :
+                          exam.scope === 'unit_exam' ? 'bg-purple-500/10 text-purple-400' :
+                          'bg-orange-500/10 text-orange-400'
+                        }`}>
+                          {exam.scope === 'topic_quiz' ? 'Quiz' :
+                           exam.scope === 'unit_exam' ? 'Examen' : 'Final'}
+                        </span>
+                        {exam.time_limit_minutes && (
+                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1 justify-end">
+                            <Clock className="w-3 h-3" />
+                            {exam.time_limit_minutes} min
+                          </p>
+                        )}
+                      </div>
+                    </Link>
                   ))}
                 </div>
               )}

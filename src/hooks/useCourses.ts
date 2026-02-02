@@ -388,3 +388,433 @@ export function useStudentStats(studentId?: string) {
     enabled: !!studentId
   })
 }
+
+// =================================================================
+// NUEVOS HOOKS PARA ESTRUCTURA COMPLETA DEL CURSO
+// =================================================================
+
+// Hook para obtener la estructura completa del curso (unidades, temas, evaluaciones)
+export function useCourseStructure(courseId?: string) {
+  return useQuery({
+    queryKey: ['course-structure', courseId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener curso con info del instructor
+      const { data: course, error: courseError } = await supabase
+        .from('courses')
+        .select('*, profiles:instructor_id(id, full_name, email)')
+        .eq('id', courseId)
+        .single()
+      
+      if (courseError) throw new Error(courseError.message)
+      
+      // Obtener unidades ordenadas
+      const { data: units } = await supabase
+        .from('course_units')
+        .select('*')
+        .eq('course_id', courseId)
+        .eq('is_published', true)
+        .order('order_index', { ascending: true })
+      
+      // Obtener temas de todas las unidades
+      const { data: topics } = await supabase
+        .from('unit_topics')
+        .select('*')
+        .eq('course_id', courseId)
+        .eq('is_published', true)
+        .order('order_index', { ascending: true })
+      
+      // Obtener recursos de todos los temas
+      const topicIds = topics?.map(t => t.id) || []
+      const { data: resources } = await supabase
+        .from('topic_resources')
+        .select('*')
+        .in('topic_id', topicIds.length > 0 ? topicIds : ['none'])
+      
+      // Organizar estructura jerárquica
+      const unitsWithTopics = (units || []).map(unit => ({
+        ...unit,
+        topics: (topics || [])
+          .filter(t => t.unit_id === unit.id)
+          .map(topic => ({
+            ...topic,
+            resources: resources?.find(r => r.topic_id === topic.id) || null
+          }))
+      }))
+      
+      return {
+        ...course,
+        units: unitsWithTopics,
+        totalUnits: units?.length || 0,
+        totalTopics: topics?.length || 0
+      }
+    },
+    enabled: !!courseId
+  })
+}
+
+// Hook para obtener tareas pendientes de un estudiante en un curso
+export function useStudentAssignments(courseId?: string, studentId?: string) {
+  return useQuery({
+    queryKey: ['student-assignments', courseId, studentId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener tareas del curso (para todos o específicas del estudiante)
+      const { data: assignments, error } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('course_id', courseId)
+        .eq('is_published', true)
+        .or(`target_type.eq.all_students,target_student_id.eq.${studentId}`)
+        .order('due_date', { ascending: true })
+      
+      if (error) {
+        console.error('Error fetching assignments:', error)
+        return { pending: [], submitted: [], graded: [] }
+      }
+      
+      // Obtener entregas del estudiante
+      const assignmentIds = assignments?.map(a => a.id) || []
+      const { data: submissions } = await supabase
+        .from('assignment_submissions')
+        .select('*')
+        .eq('student_id', studentId)
+        .in('assignment_id', assignmentIds.length > 0 ? assignmentIds : ['none'])
+      
+      // Clasificar tareas
+      const submittedIds = new Set(submissions?.map(s => s.assignment_id) || [])
+      const gradedSubmissions = submissions?.filter(s => s.status === 'graded') || []
+      const gradedIds = new Set(gradedSubmissions.map(s => s.assignment_id))
+      
+      const pending = (assignments || [])
+        .filter(a => !submittedIds.has(a.id))
+        .map(a => ({ ...a, status: 'pending' }))
+      
+      const submitted = (assignments || [])
+        .filter(a => submittedIds.has(a.id) && !gradedIds.has(a.id))
+        .map(a => ({
+          ...a,
+          status: 'submitted',
+          submission: submissions?.find(s => s.assignment_id === a.id)
+        }))
+      
+      const graded = (assignments || [])
+        .filter(a => gradedIds.has(a.id))
+        .map(a => ({
+          ...a,
+          status: 'graded',
+          submission: submissions?.find(s => s.assignment_id === a.id)
+        }))
+      
+      return { pending, submitted, graded }
+    },
+    enabled: !!courseId && !!studentId
+  })
+}
+
+// Hook para obtener todas las tareas pendientes de un estudiante (todos los cursos)
+export function useAllStudentAssignments(studentId?: string) {
+  return useQuery({
+    queryKey: ['all-student-assignments', studentId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener inscripciones del estudiante
+      const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('course_id')
+        .eq('student_id', studentId)
+      
+      const courseIds = enrollments?.map(e => e.course_id) || []
+      if (courseIds.length === 0) return { pending: [], submitted: [], graded: [] }
+      
+      // Obtener tareas de todos los cursos
+      const { data: assignments } = await supabase
+        .from('assignments')
+        .select('*, courses:course_id(id, title)')
+        .in('course_id', courseIds)
+        .eq('is_published', true)
+        .order('due_date', { ascending: true })
+      
+      // Obtener entregas del estudiante
+      const assignmentIds = assignments?.map(a => a.id) || []
+      const { data: submissions } = await supabase
+        .from('assignment_submissions')
+        .select('*')
+        .eq('student_id', studentId)
+        .in('assignment_id', assignmentIds.length > 0 ? assignmentIds : ['none'])
+      
+      const submittedIds = new Set(submissions?.map(s => s.assignment_id) || [])
+      const gradedSubmissions = submissions?.filter(s => s.status === 'graded') || []
+      const gradedIds = new Set(gradedSubmissions.map(s => s.assignment_id))
+      
+      const pending = (assignments || [])
+        .filter(a => !submittedIds.has(a.id))
+        .map(a => ({ ...a, status: 'pending' }))
+      
+      const submitted = (assignments || [])
+        .filter(a => submittedIds.has(a.id) && !gradedIds.has(a.id))
+        .map(a => ({
+          ...a,
+          status: 'submitted',
+          submission: submissions?.find(s => s.assignment_id === a.id)
+        }))
+      
+      const graded = (assignments || [])
+        .filter(a => gradedIds.has(a.id))
+        .map(a => ({
+          ...a,
+          status: 'graded',
+          submission: submissions?.find(s => s.assignment_id === a.id)
+        }))
+      
+      return { pending, submitted, graded }
+    },
+    enabled: !!studentId
+  })
+}
+
+// Hook para obtener evaluaciones pendientes de un estudiante
+export function useStudentEvaluations(courseId?: string, studentId?: string) {
+  return useQuery({
+    queryKey: ['student-evaluations', courseId, studentId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener evaluaciones del curso
+      const { data: evaluations, error } = await supabase
+        .from('evaluations')
+        .select('*')
+        .eq('course_id', courseId)
+        .eq('is_published', true)
+        .order('created_at', { ascending: true })
+      
+      if (error) {
+        console.error('Error fetching evaluations:', error)
+        return { pending: [], completed: [] }
+      }
+      
+      // Obtener intentos del estudiante
+      const evalIds = evaluations?.map(e => e.id) || []
+      const { data: attempts } = await supabase
+        .from('evaluation_attempts')
+        .select('*')
+        .eq('student_id', studentId)
+        .in('evaluation_id', evalIds.length > 0 ? evalIds : ['none'])
+        .order('attempt_number', { ascending: false })
+      
+      // Clasificar evaluaciones
+      const completedIds = new Set(attempts?.filter(a => a.status === 'submitted' || a.status === 'graded').map(a => a.evaluation_id) || [])
+      
+      const pending = (evaluations || [])
+        .filter(e => !completedIds.has(e.id))
+        .map(e => {
+          const evalAttempts = attempts?.filter(a => a.evaluation_id === e.id) || []
+          return {
+            ...e,
+            status: 'pending',
+            attemptsUsed: evalAttempts.length,
+            canRetake: evalAttempts.length < e.max_attempts
+          }
+        })
+      
+      const completed = (evaluations || [])
+        .filter(e => completedIds.has(e.id))
+        .map(e => {
+          const evalAttempts = attempts?.filter(a => a.evaluation_id === e.id) || []
+          const bestAttempt = evalAttempts.reduce((best, current) => 
+            (current.score || 0) > (best?.score || 0) ? current : best
+          , evalAttempts[0])
+          return {
+            ...e,
+            status: 'completed',
+            bestScore: bestAttempt?.score || 0,
+            passed: bestAttempt?.passed,
+            attemptsUsed: evalAttempts.length
+          }
+        })
+      
+      return { pending, completed }
+    },
+    enabled: !!courseId && !!studentId
+  })
+}
+
+// Hook para obtener todas las evaluaciones pendientes de un estudiante
+export function useAllStudentEvaluations(studentId?: string) {
+  return useQuery({
+    queryKey: ['all-student-evaluations', studentId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener inscripciones
+      const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('course_id')
+        .eq('student_id', studentId)
+      
+      const courseIds = enrollments?.map(e => e.course_id) || []
+      if (courseIds.length === 0) return { pending: [], completed: [] }
+      
+      // Obtener evaluaciones de todos los cursos
+      const { data: evaluations } = await supabase
+        .from('evaluations')
+        .select('*, courses:course_id(id, title)')
+        .in('course_id', courseIds)
+        .eq('is_published', true)
+        .order('created_at', { ascending: true })
+      
+      // Obtener intentos
+      const evalIds = evaluations?.map(e => e.id) || []
+      const { data: attempts } = await supabase
+        .from('evaluation_attempts')
+        .select('*')
+        .eq('student_id', studentId)
+        .in('evaluation_id', evalIds.length > 0 ? evalIds : ['none'])
+      
+      const completedIds = new Set(attempts?.filter(a => a.status === 'submitted' || a.status === 'graded').map(a => a.evaluation_id) || [])
+      
+      const pending = (evaluations || [])
+        .filter(e => !completedIds.has(e.id))
+        .map(e => ({ ...e, status: 'pending' }))
+      
+      const completed = (evaluations || [])
+        .filter(e => completedIds.has(e.id))
+        .map(e => {
+          const bestAttempt = attempts?.filter(a => a.evaluation_id === e.id)
+            .reduce((best, curr) => (curr.score || 0) > (best?.score || 0) ? curr : best, undefined as any)
+          return { ...e, status: 'completed', bestScore: bestAttempt?.score, passed: bestAttempt?.passed }
+        })
+      
+      return { pending, completed }
+    },
+    enabled: !!studentId
+  })
+}
+
+// Hook para obtener progreso del estudiante en un curso
+export function useStudentCourseProgress(courseId?: string, studentId?: string) {
+  return useQuery({
+    queryKey: ['student-course-progress', courseId, studentId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener progreso por unidad
+      const { data: unitProgress } = await supabase
+        .from('unit_progress')
+        .select('*')
+        .eq('course_id', courseId)
+        .eq('student_id', studentId)
+      
+      // Obtener progreso por tema
+      const { data: topicProgress } = await supabase
+        .from('topic_progress')
+        .select('*')
+        .eq('course_id', courseId)
+        .eq('student_id', studentId)
+      
+      // Calcular progreso general
+      const completedTopics = topicProgress?.filter(t => t.completed)?.length || 0
+      const totalTopics = topicProgress?.length || 1
+      const overallProgress = Math.round((completedTopics / totalTopics) * 100)
+      
+      return {
+        unitProgress: unitProgress || [],
+        topicProgress: topicProgress || [],
+        completedTopics,
+        totalTopics,
+        overallProgress
+      }
+    },
+    enabled: !!courseId && !!studentId
+  })
+}
+
+// Hook para que el profesor vea el progreso de estudiantes en un curso
+export function useCourseStudentsProgress(courseId?: string) {
+  return useQuery({
+    queryKey: ['course-students-progress', courseId],
+    queryFn: async () => {
+      const supabase = createClient()
+      
+      // Obtener inscripciones con info del estudiante
+      const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('*, profiles:student_id(id, full_name, email, avatar_url)')
+        .eq('course_id', courseId)
+        .order('enrolled_at', { ascending: false })
+      
+      if (!enrollments || enrollments.length === 0) return []
+      
+      // Obtener progreso por unidad de todos los estudiantes
+      const studentIds = enrollments.map(e => e.student_id)
+      const { data: unitProgress } = await supabase
+        .from('unit_progress')
+        .select('*')
+        .eq('course_id', courseId)
+        .in('student_id', studentIds)
+      
+      // Obtener entregas de tareas
+      const { data: assignments } = await supabase
+        .from('assignments')
+        .select('id')
+        .eq('course_id', courseId)
+      const assignmentIds = assignments?.map(a => a.id) || []
+      
+      const { data: submissions } = await supabase
+        .from('assignment_submissions')
+        .select('*')
+        .in('assignment_id', assignmentIds.length > 0 ? assignmentIds : ['none'])
+        .in('student_id', studentIds)
+      
+      // Obtener evaluaciones completadas
+      const { data: evaluations } = await supabase
+        .from('evaluations')
+        .select('id')
+        .eq('course_id', courseId)
+      const evalIds = evaluations?.map(e => e.id) || []
+      
+      const { data: attempts } = await supabase
+        .from('evaluation_attempts')
+        .select('*')
+        .in('evaluation_id', evalIds.length > 0 ? evalIds : ['none'])
+        .in('student_id', studentIds)
+        .eq('status', 'graded')
+      
+      // Construir datos de progreso por estudiante
+      return enrollments.map(enrollment => {
+        const studentUnitProgress = unitProgress?.filter(up => up.student_id === enrollment.student_id) || []
+        const studentSubmissions = submissions?.filter(s => s.student_id === enrollment.student_id) || []
+        const studentAttempts = attempts?.filter(a => a.student_id === enrollment.student_id) || []
+        
+        // Calcular promedio de calificaciones
+        const grades = [
+          ...studentSubmissions.filter(s => s.score !== null).map(s => s.score),
+          ...studentAttempts.filter(a => a.score !== null).map(a => a.score)
+        ]
+        const averageGrade = grades.length > 0 
+          ? Math.round(grades.reduce((a, b) => a + b, 0) / grades.length) 
+          : null
+        
+        return {
+          student: enrollment.profiles,
+          enrollment: {
+            enrolledAt: enrollment.enrolled_at,
+            progress: enrollment.progress || 0,
+            status: enrollment.status
+          },
+          unitsCompleted: studentUnitProgress.filter(up => up.completion_percent === 100).length,
+          assignmentsSubmitted: studentSubmissions.length,
+          totalAssignments: assignmentIds.length,
+          evaluationsCompleted: studentAttempts.length,
+          totalEvaluations: evalIds.length,
+          averageGrade,
+          lastActivity: enrollment.updated_at || enrollment.enrolled_at
+        }
+      })
+    },
+    enabled: !!courseId
+  })
+}

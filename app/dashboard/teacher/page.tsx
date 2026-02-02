@@ -117,6 +117,13 @@ export default function TeacherDashboard() {
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [targetStudentId, setTargetStudentId] = useState<string>('all');
+  
+  // Estados para selección de curso y estudiantes en tareas/exámenes
+  const [taskCourseId, setTaskCourseId] = useState<string>('');
+  const [examCourseId, setExamCourseId] = useState<string>('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [selectAllStudents, setSelectAllStudents] = useState(true);
+  const [courseStudents, setCourseStudents] = useState<StudentProfile[]>([]);
 
   const [taskData, setTaskData] = useState({ 
     title: '', 
@@ -310,13 +317,65 @@ export default function TeacherDashboard() {
     setTaskData({ ...taskData, allowed_file_types: types });
   };
 
+  // Cargar estudiantes cuando se selecciona un curso para tarea
+  const loadCourseStudents = async (courseId: string) => {
+    if (!courseId) {
+      setCourseStudents([]);
+      return;
+    }
+    const supabase = createClient();
+    const { data: enrollmentsData } = await supabase
+      .from('enrollments')
+      .select('student_id')
+      .eq('course_id', courseId);
+
+    if (!enrollmentsData || enrollmentsData.length === 0) {
+      setCourseStudents([]);
+      return;
+    }
+
+    const studentIds = enrollmentsData.map(e => e.student_id);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', studentIds);
+
+    setCourseStudents(profiles || []);
+    // Por defecto seleccionar todos
+    setSelectAllStudents(true);
+    setSelectedStudentIds(new Set(profiles?.map(p => p.id) || []));
+  };
+
+  const handleSelectAllStudents = (checked: boolean) => {
+    setSelectAllStudents(checked);
+    if (checked) {
+      setSelectedStudentIds(new Set(courseStudents.map(s => s.id)));
+    } else {
+      setSelectedStudentIds(new Set());
+    }
+  };
+
+  const handleToggleStudent = (studentId: string) => {
+    const newSet = new Set(selectedStudentIds);
+    if (newSet.has(studentId)) {
+      newSet.delete(studentId);
+    } else {
+      newSet.add(studentId);
+    }
+    setSelectedStudentIds(newSet);
+    setSelectAllStudents(newSet.size === courseStudents.length);
+  };
+
   const handleCreateTask = async () => {
-    if (!selectedCourseId || !taskData.title) return alert('Complete todos los campos');
+    if (!taskCourseId || !taskData.title) return alert('Seleccione un curso y complete el título');
+    if (!selectAllStudents && selectedStudentIds.size === 0) return alert('Seleccione al menos un estudiante');
+    
     setSubmitting(true);
     const supabase = createClient();
     
+    // Si es para todos o múltiples estudiantes, crear una tarea con target_type
     const payload: any = {
-      course_id: selectedCourseId,
+      course_id: taskCourseId,
       title: taskData.title,
       description: taskData.description,
       due_date: taskData.date,
@@ -326,33 +385,36 @@ export default function TeacherDashboard() {
       allowed_file_types: taskData.allowed_file_types,
       rubric: taskData.rubric || null,
       attached_files: taskData.attached_links.length > 0 ? taskData.attached_links.map(url => ({ type: 'link', url })) : null,
-      target_type: targetStudentId === 'all' ? 'all_students' : 'specific_student',
+      target_type: selectAllStudents ? 'all_students' : 'specific_students',
+      target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
       is_published: true
     };
-
-    if (targetStudentId !== 'all') {
-      payload.target_student_id = targetStudentId;
-    }
 
     const { error } = await supabase.from('assignments').insert(payload);
 
     setSubmitting(false);
     if (error) alert(error.message);
     else {
-      alert(`✓ Tarea asignada correctamente`);
+      const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
+      alert(`✓ Tarea asignada a ${studentCount} estudiante(s)`);
       setIsTaskModalOpen(false);
       setTaskData({ 
         title: '', description: '', date: '', assignment_type: 'file_upload',
         max_points: 100, max_file_size_mb: 10, allowed_file_types: ['pdf', 'doc'],
         rubric: '', attached_links: [], newLink: ''
       });
-      setTargetStudentId('all');
+      setTaskCourseId('');
+      setSelectAllStudents(true);
+      setSelectedStudentIds(new Set());
+      setCourseStudents([]);
       window.location.reload();
     }
   };
 
   const handleCreateExam = async () => {
-    if (!selectedCourseId || !examData.title) return alert('Complete todos los campos');
+    if (!examCourseId || !examData.title) return alert('Seleccione un curso y complete el título');
+    if (!selectAllStudents && selectedStudentIds.size === 0) return alert('Seleccione al menos un estudiante');
+    
     setSubmitting(true);
     const supabase = createClient();
 
@@ -360,7 +422,7 @@ export default function TeacherDashboard() {
     const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
 
     const evaluationPayload = {
-      course_id: selectedCourseId,
+      course_id: examCourseId,
       title: examData.title,
       scope: examData.scope,
       time_limit_minutes: examData.duration,
@@ -369,6 +431,8 @@ export default function TeacherDashboard() {
       shuffle_questions: examData.shuffle_questions,
       shuffle_options: examData.shuffle_options,
       show_correct_answers: examData.show_correct_answers,
+      target_type: selectAllStudents ? 'all_students' : 'specific_students',
+      target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
       questions: questions.map((q, idx) => ({
         id: `q${idx + 1}`,
         type: q.type,
@@ -399,16 +463,17 @@ export default function TeacherDashboard() {
       // Si la tabla evaluations no existe, usar assignments como fallback
       console.error('Error en evaluations:', error);
       const fallbackPayload: any = {
-        course_id: selectedCourseId,
+        course_id: examCourseId,
         title: examData.title,
         description: `Examen - ${questions.length} preguntas`,
         due_date: examData.date,
         assignment_type: 'exam',
         max_points: totalPoints,
         quiz_data: evaluationPayload,
+        target_type: selectAllStudents ? 'all_students' : 'specific_students',
+        target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
         is_published: true
       };
-      if (targetStudentId !== 'all') fallbackPayload.target_student_id = targetStudentId;
       
       const { error: fallbackError } = await supabase.from('assignments').insert(fallbackPayload);
       if (fallbackError) {
@@ -417,7 +482,8 @@ export default function TeacherDashboard() {
       }
     }
     
-    alert(`✓ Examen creado correctamente`);
+    const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
+    alert(`✓ Examen asignado a ${studentCount} estudiante(s)`);
     setIsExamModalOpen(false);
     setExamData({ 
       title: '', date: '', duration: 60, scope: 'unit_exam',
@@ -425,7 +491,10 @@ export default function TeacherDashboard() {
       shuffle_options: false, show_correct_answers: true
     });
     setQuestions([{ text: '', type: 'multiple_choice', optionA: '', optionB: '', optionC: '', optionD: '', correct: 'a', points: 10 }]);
-    setTargetStudentId('all');
+    setExamCourseId('');
+    setSelectAllStudents(true);
+    setSelectedStudentIds(new Set());
+    setCourseStudents([]);
     window.location.reload();
   };
 
@@ -770,20 +839,75 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              {/* Asignar a */}
+              {/* Seleccionar Curso */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Asignar a</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Curso *</label>
                 <select 
                   className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
-                  value={targetStudentId}
-                  onChange={(e) => setTargetStudentId(e.target.value)}
+                  value={taskCourseId}
+                  onChange={(e) => {
+                    setTaskCourseId(e.target.value);
+                    loadCourseStudents(e.target.value);
+                  }}
                 >
-                  <option value="all">Todos los estudiantes</option>
-                  {students.map(s => (
-                    <option key={s.id} value={s.id}>{s.full_name}</option>
+                  <option value="">Seleccionar curso...</option>
+                  {courses.map(c => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
                   ))}
                 </select>
               </div>
+
+              {/* Seleccionar Estudiantes */}
+              {taskCourseId && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Asignar a</label>
+                  <div className="bg-[#030712] border border-gray-800 rounded-lg p-3">
+                    {/* Checkbox todos */}
+                    <label className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer border-b border-gray-800 mb-2">
+                      <input 
+                        type="checkbox" 
+                        checked={selectAllStudents}
+                        onChange={(e) => handleSelectAllStudents(e.target.checked)}
+                        className="w-4 h-4 accent-cyan-500 rounded"
+                      />
+                      <span className="text-white font-medium">Todos los estudiantes</span>
+                      <span className="text-xs text-gray-500 ml-auto">{courseStudents.length} estudiantes</span>
+                    </label>
+                    
+                    {/* Lista de estudiantes con scroll */}
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {courseStudents.length === 0 ? (
+                        <p className="text-gray-500 text-sm text-center py-3">No hay estudiantes inscritos en este curso</p>
+                      ) : (
+                        courseStudents.map(student => (
+                          <label 
+                            key={student.id} 
+                            className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer"
+                          >
+                            <input 
+                              type="checkbox" 
+                              checked={selectedStudentIds.has(student.id)}
+                              onChange={() => handleToggleStudent(student.id)}
+                              className="w-4 h-4 accent-cyan-500 rounded"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-white text-sm block truncate">{student.full_name}</span>
+                              <span className="text-gray-500 text-xs truncate block">{student.email}</span>
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    
+                    {/* Contador de seleccionados */}
+                    {!selectAllStudents && selectedStudentIds.size > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-800 text-xs text-cyan-400">
+                        {selectedStudentIds.size} estudiante(s) seleccionado(s)
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Título y descripción */}
               <div className="grid grid-cols-2 gap-4">
@@ -960,19 +1084,72 @@ export default function TeacherDashboard() {
 
               {/* Configuración básica */}
               <div className="grid grid-cols-2 gap-4">
+                {/* Seleccionar Curso */}
                 <div className="col-span-2">
-                  <label className="block text-sm text-gray-400 mb-1.5">Asignar a</label>
+                  <label className="block text-sm text-gray-400 mb-1.5">Curso *</label>
                   <select 
                     className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
-                    value={targetStudentId}
-                    onChange={(e) => setTargetStudentId(e.target.value)}
+                    value={examCourseId}
+                    onChange={(e) => {
+                      setExamCourseId(e.target.value);
+                      loadCourseStudents(e.target.value);
+                    }}
                   >
-                    <option value="all">Todos los estudiantes</option>
-                    {students.map(s => (
-                      <option key={s.id} value={s.id}>{s.full_name}</option>
+                    <option value="">Seleccionar curso...</option>
+                    {courses.map(c => (
+                      <option key={c.id} value={c.id}>{c.title}</option>
                     ))}
                   </select>
                 </div>
+
+                {/* Seleccionar Estudiantes */}
+                {examCourseId && (
+                  <div className="col-span-2">
+                    <label className="block text-sm text-gray-400 mb-1.5">Asignar a</label>
+                    <div className="bg-[#030712] border border-gray-800 rounded-lg p-3">
+                      {/* Checkbox todos */}
+                      <label className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer border-b border-gray-800 mb-2">
+                        <input 
+                          type="checkbox" 
+                          checked={selectAllStudents}
+                          onChange={(e) => handleSelectAllStudents(e.target.checked)}
+                          className="w-4 h-4 accent-cyan-500 rounded"
+                        />
+                        <span className="text-white font-medium">Todos los estudiantes</span>
+                        <span className="text-xs text-gray-500 ml-auto">{courseStudents.length} estudiantes</span>
+                      </label>
+                      
+                      {/* Lista de estudiantes */}
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {courseStudents.length === 0 ? (
+                          <p className="text-gray-500 text-sm text-center py-3">No hay estudiantes inscritos</p>
+                        ) : (
+                          courseStudents.map(student => (
+                            <label 
+                              key={student.id} 
+                              className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer"
+                            >
+                              <input 
+                                type="checkbox" 
+                                checked={selectedStudentIds.has(student.id)}
+                                onChange={() => handleToggleStudent(student.id)}
+                                className="w-4 h-4 accent-cyan-500 rounded"
+                              />
+                              <span className="text-white text-sm truncate">{student.full_name}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                      
+                      {!selectAllStudents && selectedStudentIds.size > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-800 text-xs text-cyan-400">
+                          {selectedStudentIds.size} estudiante(s) seleccionado(s)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-400 mb-1.5">Título del examen *</label>
                   <input 

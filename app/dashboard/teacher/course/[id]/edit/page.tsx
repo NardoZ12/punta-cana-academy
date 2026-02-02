@@ -7,7 +7,8 @@ import { createClient } from '@/utils/supabase/client';
 import { 
   ArrowLeft, Save, Eye, EyeOff, Settings, Image as ImageIcon, 
   BookOpen, Video, FileText, Presentation, Plus, Trash2, Edit2, 
-  ChevronDown, ChevronRight, GripVertical, X, Upload, Clock, File
+  ChevronDown, ChevronRight, GripVertical, X, Upload, Clock, File,
+  Check, AlertCircle
 } from 'lucide-react';
 import TopicResourceEditor, { TopicResourceData } from '@/components/teacher/TopicResourceEditor';
 import { getVideoInfo } from '@/utils/videoEmbed';
@@ -49,6 +50,38 @@ interface TopicResources {
   slides_url: string;
   slides_provider: string;
   is_published: boolean;
+  additional_resources?: string;
+}
+
+// Estado para crear tema con recursos
+interface NewTopicWithResources {
+  unitId: string;
+  title: string;
+  estimated_minutes: number;
+  is_published: boolean;
+  introduction: string;
+  videos: Array<{
+    id: string;
+    url: string;
+    title: string;
+    provider: 'youtube' | 'vimeo' | 'unknown';
+    embedUrl: string | null;
+    duration_seconds?: number;
+  }>;
+  documents: Array<{
+    type: 'pdf' | 'slides' | 'other';
+    url: string;
+    title: string;
+    provider?: string;
+  }>;
+  quiz: Array<{
+    id: string;
+    text: string;
+    type: 'multiple_choice' | 'true_false';
+    options: string[];
+    correctAnswer: number;
+    points: number;
+  }>;
 }
 
 interface CourseData {
@@ -112,6 +145,10 @@ export default function EditCoursePage() {
   const [newUnitTitle, setNewUnitTitle] = useState('');
   const [addingTopicToUnit, setAddingTopicToUnit] = useState<string | null>(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
+  
+  // NUEVO: Estado para crear tema con recursos completos
+  const [creatingTopicWithResources, setCreatingTopicWithResources] = useState<string | null>(null);
+  const [newTopicData, setNewTopicData] = useState<NewTopicWithResources | null>(null);
 
   useEffect(() => { fetchCourseData(); }, [courseId]);
 
@@ -224,6 +261,89 @@ export default function EditCoursePage() {
     if (!confirm('¿Eliminar este tema?')) return;
     const { error } = await supabase.from('unit_topics').delete().eq('id', topicId);
     if (!error) setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+  };
+
+  // NUEVO: Iniciar creación de tema con recursos
+  const handleStartCreateTopicWithResources = (unitId: string) => {
+    setCreatingTopicWithResources(unitId);
+    setNewTopicData({
+      unitId,
+      title: '',
+      estimated_minutes: 30,
+      is_published: false,
+      introduction: '',
+      videos: [],
+      documents: [],
+      quiz: []
+    });
+  };
+
+  // NUEVO: Crear tema con todos sus recursos
+  const handleCreateTopicWithResources = async () => {
+    if (!newTopicData || !newTopicData.title.trim()) {
+      alert('Por favor ingresa un título para el tema');
+      return;
+    }
+
+    const unit = units.find(u => u.id === newTopicData.unitId);
+    if (!unit) return;
+
+    // 1. Crear el tema
+    const { data: topicData, error: topicError } = await supabase.from('unit_topics').insert({
+      unit_id: newTopicData.unitId,
+      course_id: courseId,
+      title: newTopicData.title,
+      order_index: unit.topics?.length || 0,
+      is_published: newTopicData.is_published,
+      estimated_minutes: newTopicData.estimated_minutes
+    }).select().single();
+
+    if (topicError || !topicData) {
+      alert('Error al crear el tema: ' + topicError?.message);
+      return;
+    }
+
+    // 2. Crear los recursos del tema
+    const mainVideo = newTopicData.videos[0];
+    const additionalVideos = newTopicData.videos.slice(1);
+    const pdfDoc = newTopicData.documents.find(d => d.type === 'pdf');
+    const slidesDoc = newTopicData.documents.find(d => d.type === 'slides');
+
+    const resourcePayload = {
+      topic_id: topicData.id,
+      unit_id: newTopicData.unitId,
+      course_id: courseId,
+      introduction: newTopicData.introduction || '',
+      introduction_format: 'markdown',
+      video_url: mainVideo?.url || null,
+      video_provider: mainVideo?.provider || null,
+      video_duration_seconds: mainVideo?.duration_seconds || null,
+      pdf_url: pdfDoc?.url || null,
+      pdf_title: pdfDoc?.title || null,
+      slides_url: slidesDoc?.url || null,
+      slides_provider: slidesDoc?.provider || null,
+      is_published: newTopicData.is_published,
+      additional_resources: JSON.stringify({
+        videos: additionalVideos,
+        quiz: newTopicData.quiz
+      })
+    };
+
+    const { data: resourceData } = await supabase
+      .from('topic_resources')
+      .insert(resourcePayload)
+      .select()
+      .single();
+
+    // 3. Actualizar estado local
+    setUnits(units.map(u => u.id === newTopicData.unitId ? {
+      ...u,
+      topics: [...(u.topics || []), { ...topicData, resources: resourceData || null }]
+    } : u));
+
+    // 4. Limpiar estados
+    setCreatingTopicWithResources(null);
+    setNewTopicData(null);
   };
 
   const handleSaveResources = async (topicId: string, data: TopicResourceData) => {
@@ -477,8 +597,24 @@ export default function EditCoursePage() {
                         ))}
                       </div>
 
-                      {/* Add Topic */}
-                      {addingTopicToUnit === unit.id ? (
+                      {/* Add Topic - Botones */}
+                      <div className="flex gap-2 mt-3">
+                        <button 
+                          onClick={() => handleStartCreateTopicWithResources(unit.id)} 
+                          className="flex-1 py-3 border border-dashed border-cyan-500/50 text-cyan-400 rounded-xl hover:bg-cyan-500/10 text-sm flex items-center justify-center gap-2 transition-colors">
+                          <Plus className="w-4 h-4" />
+                          Agregar tema con recursos
+                        </button>
+                        <button 
+                          onClick={() => setAddingTopicToUnit(unit.id)} 
+                          className="px-4 py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-gray-600 text-sm flex items-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          Solo título
+                        </button>
+                      </div>
+                      
+                      {/* Input rápido para agregar solo título */}
+                      {addingTopicToUnit === unit.id && (
                         <div className="flex gap-2 mt-3">
                           <input type="text" value={newTopicTitle} onChange={e => setNewTopicTitle(e.target.value)} 
                             placeholder="Título del tema..." 
@@ -487,11 +623,6 @@ export default function EditCoursePage() {
                           <button onClick={() => handleAddTopic(unit.id)} className="px-3 py-2 bg-cyan-500 text-black rounded-lg text-sm font-medium">Agregar</button>
                           <button onClick={() => { setAddingTopicToUnit(null); setNewTopicTitle(''); }} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-sm">Cancelar</button>
                         </div>
-                      ) : (
-                        <button onClick={() => setAddingTopicToUnit(unit.id)} 
-                          className="w-full mt-3 py-2.5 border border-dashed border-gray-700 text-gray-400 rounded-lg hover:border-gray-600 text-sm flex items-center justify-center gap-2">
-                          <Plus className="w-4 h-4" />Agregar tema
-                        </button>
                       )}
                     </div>
                   )}
@@ -663,6 +794,492 @@ export default function EditCoursePage() {
           onClose={() => setEditingResources(null)}
         />
       )}
+
+      {/* NUEVO: Modal para crear tema con recursos completos */}
+      {creatingTopicWithResources && newTopicData && (
+        <CreateTopicWithResourcesModal
+          data={newTopicData}
+          onChange={setNewTopicData}
+          onSave={handleCreateTopicWithResources}
+          onClose={() => {
+            setCreatingTopicWithResources(null);
+            setNewTopicData(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE: Modal para crear tema con recursos
+// ============================================
+
+interface CreateTopicModalProps {
+  data: NewTopicWithResources;
+  onChange: (data: NewTopicWithResources) => void;
+  onSave: () => void;
+  onClose: () => void;
+}
+
+function CreateTopicWithResourcesModal({ data, onChange, onSave, onClose }: CreateTopicModalProps) {
+  const [activeSection, setActiveSection] = useState<'info' | 'videos' | 'docs' | 'quiz'>('info');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave();
+    setSaving(false);
+  };
+
+  const addVideo = () => {
+    onChange({
+      ...data,
+      videos: [...data.videos, { id: `vid_${Date.now()}`, url: '', title: '', provider: 'unknown', embedUrl: null }]
+    });
+  };
+
+  const updateVideo = (index: number, field: string, value: any) => {
+    const newVideos = [...data.videos];
+    newVideos[index] = { ...newVideos[index], [field]: value };
+    if (field === 'url') {
+      const info = getVideoInfo(value);
+      newVideos[index].provider = info.provider;
+      newVideos[index].embedUrl = info.embedUrl;
+    }
+    onChange({ ...data, videos: newVideos });
+  };
+
+  const removeVideo = (index: number) => {
+    onChange({ ...data, videos: data.videos.filter((_, i) => i !== index) });
+  };
+
+  const updateDocument = (type: 'pdf' | 'slides', field: string, value: string) => {
+    const existing = data.documents.find(d => d.type === type);
+    const updated = existing ? { ...existing, [field]: value } : { type, url: '', title: '', [field]: value };
+    onChange({ ...data, documents: [...data.documents.filter(d => d.type !== type), updated] });
+  };
+
+  const addQuizQuestion = () => {
+    onChange({
+      ...data,
+      quiz: [...data.quiz, {
+        id: `q_${Date.now()}`,
+        text: '',
+        type: 'multiple_choice',
+        options: ['', '', '', ''],
+        correctAnswer: 0,
+        points: 10
+      }]
+    });
+  };
+
+  const updateQuestion = (index: number, updates: Partial<typeof data.quiz[0]>) => {
+    const newQuiz = [...data.quiz];
+    newQuiz[index] = { ...newQuiz[index], ...updates };
+    onChange({ ...data, quiz: newQuiz });
+  };
+
+  const removeQuestion = (index: number) => {
+    onChange({ ...data, quiz: data.quiz.filter((_, i) => i !== index) });
+  };
+
+  const pdfDoc = data.documents.find(d => d.type === 'pdf');
+  const slidesDoc = data.documents.find(d => d.type === 'slides');
+
+  const sections = [
+    { id: 'info', label: 'Información', icon: FileText },
+    { id: 'videos', label: 'Videos', icon: Video, count: data.videos.length },
+    { id: 'docs', label: 'Documentos', icon: Presentation, count: data.documents.filter(d => d.url).length },
+    { id: 'quiz', label: 'Quiz', icon: Check, count: data.quiz.length },
+  ] as const;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0f1419] border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-800 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Plus className="w-5 h-5 text-cyan-400" />
+              Crear Nuevo Tema
+            </h2>
+            <p className="text-sm text-gray-400 mt-0.5">Configura el contenido completo del tema</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-800 px-5">
+          {sections.map(section => (
+            <button
+              key={section.id}
+              onClick={() => setActiveSection(section.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative ${
+                activeSection === section.id ? 'text-cyan-400' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <section.icon className="w-4 h-4" />
+              {section.label}
+              {section.count !== undefined && section.count > 0 && (
+                <span className="bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5 rounded-full">{section.count}</span>
+              )}
+              {activeSection === section.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cyan-500" />}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5">
+          
+          {/* Sección: Información Básica */}
+          {activeSection === 'info' && (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Título del Tema <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={data.title}
+                  onChange={(e) => onChange({ ...data, title: e.target.value })}
+                  placeholder="Ej: Introducción a la gramática básica"
+                  className="w-full bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Duración estimada</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={data.estimated_minutes}
+                      onChange={(e) => onChange({ ...data, estimated_minutes: parseInt(e.target.value) || 30 })}
+                      className="w-24 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                    <span className="text-gray-400">minutos</span>
+                  </div>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.is_published}
+                      onChange={(e) => onChange({ ...data, is_published: e.target.checked })}
+                      className="w-4 h-4 accent-cyan-500"
+                    />
+                    <span className="text-sm text-gray-300">Publicar inmediatamente</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Introducción al tema</label>
+                <textarea
+                  value={data.introduction}
+                  onChange={(e) => onChange({ ...data, introduction: e.target.value })}
+                  placeholder="Escribe una breve introducción que prepare al estudiante..."
+                  rows={4}
+                  className="w-full bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none resize-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">Soporta formato Markdown</p>
+              </div>
+            </div>
+          )}
+
+          {/* Sección: Videos */}
+          {activeSection === 'videos' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-white">Videos Explicativos</h3>
+                  <p className="text-xs text-gray-400 mt-1">Agrega hasta 3 videos (YouTube o Vimeo)</p>
+                </div>
+              </div>
+
+              {data.videos.map((video, idx) => (
+                <div key={video.id} className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-300">Video {idx + 1}</span>
+                    <button onClick={() => removeVideo(idx)} className="text-gray-400 hover:text-red-400 p-1">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      value={video.title}
+                      onChange={(e) => updateVideo(idx, 'title', e.target.value)}
+                      placeholder="Título del video"
+                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      value={video.duration_seconds || ''}
+                      onChange={(e) => updateVideo(idx, 'duration_seconds', parseInt(e.target.value) || 0)}
+                      placeholder="Duración (seg)"
+                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+                  
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={video.url}
+                      onChange={(e) => updateVideo(idx, 'url', e.target.value)}
+                      placeholder="https://youtube.com/watch?v=... o https://vimeo.com/..."
+                      className={`w-full bg-[#030712] border rounded-lg px-3 py-2 pr-10 text-sm text-white focus:outline-none ${
+                        video.url && video.provider === 'unknown' 
+                          ? 'border-red-500 focus:border-red-500' 
+                          : 'border-gray-700 focus:border-cyan-500'
+                      }`}
+                    />
+                    {video.url && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {video.provider !== 'unknown' ? (
+                          <Check className="w-4 h-4 text-green-400" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-red-400" />
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Preview del video */}
+                  {video.embedUrl && (
+                    <div className="aspect-video rounded-lg overflow-hidden border border-gray-700">
+                      <iframe
+                        src={video.embedUrl}
+                        title={video.title || 'Video Preview'}
+                        className="w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {data.videos.length < 3 && (
+                <button
+                  onClick={addVideo}
+                  className="w-full py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-cyan-500/50 hover:text-cyan-400 transition-colors text-sm flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agregar video ({data.videos.length}/3)
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Sección: Documentos */}
+          {activeSection === 'docs' && (
+            <div className="space-y-6">
+              {/* PDF */}
+              <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="w-5 h-5 text-orange-400" />
+                  <h3 className="font-medium text-white">Documento PDF</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Título</label>
+                    <input
+                      type="text"
+                      value={pdfDoc?.title || ''}
+                      onChange={(e) => updateDocument('pdf', 'title', e.target.value)}
+                      placeholder="Ej: Guía de estudio"
+                      className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">URL del PDF</label>
+                    <input
+                      type="url"
+                      value={pdfDoc?.url || ''}
+                      onChange={(e) => updateDocument('pdf', 'url', e.target.value)}
+                      placeholder="https://..."
+                      className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Slides */}
+              <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Presentation className="w-5 h-5 text-purple-400" />
+                  <h3 className="font-medium text-white">Diapositivas</h3>
+                </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Título</label>
+                      <input
+                        type="text"
+                        value={slidesDoc?.title || ''}
+                        onChange={(e) => updateDocument('slides', 'title', e.target.value)}
+                        placeholder="Ej: Presentación del tema"
+                        className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Proveedor</label>
+                      <select
+                        value={slidesDoc?.provider || 'google_slides'}
+                        onChange={(e) => updateDocument('slides', 'provider', e.target.value)}
+                        className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                      >
+                        <option value="google_slides">Google Slides</option>
+                        <option value="canva">Canva</option>
+                        <option value="pdf">PDF</option>
+                        <option value="custom">URL Directa</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">URL de las diapositivas</label>
+                    <input
+                      type="url"
+                      value={slidesDoc?.url || ''}
+                      onChange={(e) => updateDocument('slides', 'url', e.target.value)}
+                      placeholder="https://docs.google.com/presentation/..."
+                      className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sección: Quiz */}
+          {activeSection === 'quiz' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-white">Cuestionario del Tema</h3>
+                  <p className="text-xs text-gray-400 mt-1">Preguntas de repaso para evaluar comprensión</p>
+                </div>
+              </div>
+
+              {data.quiz.map((q, idx) => (
+                <div key={q.id} className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-cyan-400">Pregunta {idx + 1}</span>
+                    <button onClick={() => removeQuestion(idx)} className="text-gray-400 hover:text-red-400 p-1">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <textarea
+                    value={q.text}
+                    onChange={(e) => updateQuestion(idx, { text: e.target.value })}
+                    placeholder="Escribe la pregunta..."
+                    rows={2}
+                    className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none resize-none"
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <select
+                      value={q.type}
+                      onChange={(e) => updateQuestion(idx, { 
+                        type: e.target.value as 'multiple_choice' | 'true_false',
+                        options: e.target.value === 'true_false' ? ['Verdadero', 'Falso'] : q.options
+                      })}
+                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    >
+                      <option value="multiple_choice">Opción múltiple</option>
+                      <option value="true_false">Verdadero/Falso</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={q.points}
+                      onChange={(e) => updateQuestion(idx, { points: parseInt(e.target.value) || 10 })}
+                      placeholder="Puntos"
+                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-gray-400">Opciones (marca la correcta)</label>
+                    {q.options.map((opt, optIdx) => (
+                      <div key={optIdx} className="flex items-center gap-2">
+                        <button
+                          onClick={() => updateQuestion(idx, { correctAnswer: optIdx })}
+                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                            q.correctAnswer === optIdx 
+                              ? 'border-green-500 bg-green-500/20' 
+                              : 'border-gray-600 hover:border-gray-500'
+                          }`}
+                        >
+                          {q.correctAnswer === optIdx && <Check className="w-3 h-3 text-green-400" />}
+                        </button>
+                        <input
+                          type="text"
+                          value={opt}
+                          onChange={(e) => {
+                            const newOptions = [...q.options];
+                            newOptions[optIdx] = e.target.value;
+                            updateQuestion(idx, { options: newOptions });
+                          }}
+                          placeholder={`Opción ${String.fromCharCode(65 + optIdx)}`}
+                          disabled={q.type === 'true_false'}
+                          className="flex-1 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={addQuizQuestion}
+                className="w-full py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-purple-500/50 hover:text-purple-400 transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Agregar pregunta
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-5 border-t border-gray-800 bg-[#0a0f1a] flex-shrink-0">
+          <div className="text-sm text-gray-400">
+            {data.videos.filter(v => v.embedUrl).length} video(s) · 
+            {data.documents.filter(d => d.url).length} documento(s) · 
+            {data.quiz.length} pregunta(s)
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white transition-colors">
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !data.title.trim()}
+              className="px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  Creando...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Crear Tema
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

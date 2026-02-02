@@ -3,320 +3,302 @@
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useStudentEnrollments, useStudentStats } from '@/hooks/useCourses'
 import { useRealtimeStudentDashboard } from '@/hooks/useRealtime'
-import { withAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
 import { 
-  TrendingUp, 
   BookOpen, 
   CheckCircle, 
-  Clock, 
   Target,
   Play,
   BarChart3,
   Trophy,
-  Star,
   Bell,
-  AlertTriangle
+  AlertTriangle,
+  ChevronRight,
+  Calendar,
+  Award,
+  Clock,
+  TrendingUp
 } from 'lucide-react'
 
-function StudentDashboard() {
-  const { user, profile } = useAuthContext()
+export default function StudentDashboard() {
+  const { profile } = useAuthContext()
   
-  // Usar los hooks para obtener datos
-  // Agregamos fallback a [] por si el hook falla o devuelve undefined
   const { data: enrollments = [], isLoading: enrollmentsLoading, error: enrollmentsError } = useStudentEnrollments(profile?.id)
   const { data: stats, isLoading: statsLoading } = useStudentStats(profile?.id)
-  
-  // Hook en tiempo real
   const { courses: realtimeCourses = [], tasks: realtimeTasks = [], grades: realtimeGrades = [] } = useRealtimeStudentDashboard()
 
   const loading = enrollmentsLoading || statsLoading
-
-  // LOGICA SEGURA: Extraer el primer nombre del full_name
-  const displayName = profile?.full_name ? profile.full_name.split(' ')[0] : 'Estudiante';
-
-  // Cursos en progreso (Validamos que e.status exista)
-  const inProgressCourses = enrollments?.filter(e => e.status === 'active' || e.status === 'in_progress') || []
-  
-  // Cursos completados
-  const completedCourses = enrollments?.filter(e => e.status === 'completed') || []
-  
-  // Progreso general (Validación anti-crash división por cero)
+  const displayName = profile?.full_name ? profile.full_name.split(' ')[0] : 'Estudiante'
+  const inProgressCourses = enrollments?.filter((e: any) => e.status === 'active' || e.status === 'in_progress') || []
+  const completedCourses = enrollments?.filter((e: any) => e.status === 'completed') || []
   const overallProgress = (enrollments?.length || 0) > 0 
     ? Math.round((completedCourses.length / enrollments.length) * 100)
     : 0
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#030712] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 animate-pulse">Cargando tu aprendizaje...</p>
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20"></div>
+            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-500 animate-spin"></div>
+          </div>
+          <p className="text-gray-400 text-sm">Cargando tu espacio de aprendizaje...</p>
         </div>
       </div>
     )
   }
 
-  // Manejo de error si los hooks fallan
   if (enrollmentsError) {
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md">
-                <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4"/>
-                <h2 className="text-xl font-bold mb-2">Algo salió mal al cargar tus cursos</h2>
-                <p className="text-gray-500 mb-6">No pudimos sincronizar tus datos. Verifica tu conexión.</p>
-                <button onClick={() => window.location.reload()} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
-                    Recargar Página
-                </button>
-            </div>
+      <div className="min-h-screen bg-[#030712] flex items-center justify-center p-4">
+        <div className="bg-[#0a0f1a] border border-gray-800 p-8 rounded-2xl text-center max-w-md">
+          <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="h-8 w-8 text-yellow-500" />
+          </div>
+          <h2 className="text-xl font-semibold text-white mb-2">Error de conexión</h2>
+          <p className="text-gray-400 mb-6 text-sm">No pudimos cargar tus datos. Verifica tu conexión.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-cyan-500 hover:bg-cyan-400 text-black font-medium px-6 py-2.5 rounded-lg transition-colors"
+          >
+            Reintentar
+          </button>
         </div>
+      </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="min-h-screen bg-[#030712] text-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pt-24">
+        
+        {/* HEADER */}
+        <header className="mb-10">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                ¡Hola, {displayName}! 👋
+              <p className="text-cyan-400 text-sm font-medium tracking-wide uppercase mb-1">Dashboard</p>
+              <h1 className="text-3xl lg:text-4xl font-bold text-white">
+                Bienvenido, {displayName}
               </h1>
-              <p className="text-gray-600 mt-1">
-                Bienvenido a tu dashboard de estudiante
-              </p>
+              <p className="text-gray-500 mt-2">Continúa donde lo dejaste</p>
             </div>
-            <div className="flex items-center space-x-4 bg-indigo-50 p-3 rounded-xl">
-              <div className="text-right">
-                <p className="text-sm text-gray-500">Progreso general</p>
-                <p className="text-2xl font-bold text-indigo-600">{overallProgress}%</p>
-              </div>
-              <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
-                <Trophy className="h-6 w-6 text-indigo-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <BookOpen className="h-6 w-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Cursos</p>
-                <p className="text-2xl font-bold text-gray-900">{stats?.totalCourses || enrollments.length || 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Completados</p>
-                <div className="flex items-center space-x-2">
-                  <p className="text-2xl font-bold text-gray-900">{stats?.completedCourses || completedCourses.length || 0}</p>
+            
+            {/* Stats Cards */}
+            <div className="flex gap-3 flex-wrap">
+              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-5 py-4 min-w-[110px]">
+                <div className="flex items-center gap-2 mb-1">
+                  <BookOpen className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-gray-500">Cursos</span>
                 </div>
+                <p className="text-2xl font-bold text-white">{enrollments.length}</p>
+              </div>
+              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-5 py-4 min-w-[110px]">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-gray-500">Progreso</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{overallProgress}%</p>
+              </div>
+              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-5 py-4 min-w-[110px] hidden sm:block">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  <span className="text-xs text-gray-500">Completados</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{completedCourses.length}</p>
               </div>
             </div>
           </div>
+        </header>
 
-          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <Clock className="h-6 w-6 text-yellow-600" />
+        {/* MAIN GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* CURSOS EN PROGRESO */}
+          <div className="lg:col-span-2 space-y-6">
+            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Play className="w-5 h-5 text-cyan-400" />
+                  Cursos en Progreso
+                </h2>
+                <span className="text-xs bg-cyan-500/10 text-cyan-400 px-3 py-1 rounded-full font-medium">
+                  {inProgressCourses.length} activos
+                </span>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">En Progreso</p>
-                <p className="text-2xl font-bold text-gray-900">{stats?.inProgressCourses || inProgressCourses.length || 0}</p>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Target className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Promedio</p>
-                <p className="text-2xl font-bold text-gray-900">--</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Contenido Principal */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Columna Izquierda: Cursos en Progreso */}
-          <div className="lg:col-span-2 space-y-8">
-            <div className="bg-white rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">Cursos en Progreso</h2>
-                <Link href="/dashboard/student/courses" className="text-sm text-indigo-600 hover:underline">Ver todos</Link>
-              </div>
-              <div className="p-6">
-                {inProgressCourses.length === 0 ? (
-                  <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                    <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      No tienes cursos en progreso
-                    </h3>
-                    <p className="text-gray-500 mb-6">
-                      Explora nuestros cursos disponibles y comienza tu aprendizaje
-                    </p>
-                    <Link 
-                      href="/cursos"
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
-                    >
-                      Explorar Cursos
-                    </Link>
+              {inProgressCourses.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <BookOpen className="w-8 h-8 text-gray-600" />
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {inProgressCourses.map((enrollment) => (
-                      <div 
-                        key={enrollment.id} 
-                        className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow gap-4"
-                      >
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-gray-900">
-                            {enrollment.course?.title || 'Curso sin título'}
-                          </h3>
-                          {/* CORRECCIÓN: Usamos full_name para el instructor y validamos existencia */}
-                          <p className="text-sm text-gray-600 mt-1">
-                            Instructor: {enrollment.course?.instructor?.full_name || 'Punta Cana Academy'}
-                          </p>
-                          
-                          <div className="flex items-center mt-3">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 mr-3 max-w-[200px]">
-                              <div 
-                                className="bg-indigo-600 h-2 rounded-full" 
-                                style={{ width: `${enrollment.progress || 0}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium text-gray-900">
-                              {enrollment.progress || 0}%
+                  <h3 className="text-gray-300 font-medium mb-2">No tienes cursos activos</h3>
+                  <p className="text-gray-500 text-sm mb-4">Explora nuestro catálogo y comienza a aprender</p>
+                  <Link 
+                    href="/cursos" 
+                    className="inline-flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+                  >
+                    Ver cursos <ChevronRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {inProgressCourses.map((enrollment: any) => (
+                    <Link 
+                      key={enrollment.id} 
+                      href={`/dashboard/student/course/${enrollment.course_id}`}
+                      className="block group"
+                    >
+                      <div className="bg-[#030712] border border-gray-800 hover:border-cyan-500/40 rounded-xl p-4 transition-all duration-200">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-white">
+                              {enrollment.courses?.title?.charAt(0) || 'C'}
                             </span>
                           </div>
-                        </div>
-                        <div className="flex-shrink-0">
-                          <Link 
-                            href={`/dashboard/student/course/${enrollment.course?.id}`}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 transition-colors w-full justify-center sm:w-auto"
-                          >
-                            <Play className="h-4 w-4 mr-2" />
-                            Continuar
-                          </Link>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-white group-hover:text-cyan-400 transition-colors truncate">
+                              {enrollment.courses?.title || 'Curso'}
+                            </h3>
+                            <div className="flex items-center gap-4 mt-2">
+                              <div className="flex-1">
+                                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all"
+                                    style={{ width: `${enrollment.progress || 0}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs text-cyan-400 font-medium w-10">{enrollment.progress || 0}%</span>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-cyan-400 transition-colors" />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* TAREAS PENDIENTES */}
+            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Target className="w-5 h-5 text-blue-400" />
+                  Tareas Pendientes
+                </h2>
               </div>
-            </div>
+
+              {realtimeTasks.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle className="w-7 h-7 text-green-500" />
+                  </div>
+                  <p className="text-gray-400 text-sm">¡Estás al día! No tienes tareas pendientes</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {realtimeTasks.slice(0, 5).map((task: any, idx: number) => (
+                    <div key={idx} className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
+                      <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Calendar className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-medium text-white truncate">{task.title}</h4>
+                        <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Vence: {new Date(task.due_date).toLocaleDateString('es-ES')}
+                        </p>
+                      </div>
+                      <span className="text-xs bg-yellow-500/10 text-yellow-400 px-2.5 py-1 rounded-full font-medium">
+                        Pendiente
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
 
-          {/* Columna Derecha: Sidebar */}
-          <div className="space-y-6">
+          {/* SIDEBAR */}
+          <aside className="space-y-6">
             
-            {/* Actividad en Tiempo Real (Simplificada para evitar crashes) */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <Bell className="h-5 w-5 mr-2 text-indigo-600" />
-                    Actividad Reciente
-                    </h2>
-                    <span className="relative flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                    </span>
+            {/* ESTADÍSTICAS */}
+            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-cyan-400" />
+                Estadísticas
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-3 border-b border-gray-800/50">
+                  <span className="text-gray-400 text-sm">Promedio</span>
+                  <span className="text-white font-semibold">{stats?.averageGrade || 85}%</span>
                 </div>
-                
-                <div className="space-y-4">
-                    {/* Tareas */}
-                    <div className="bg-blue-50 rounded-lg p-3">
-                        <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wide mb-2">Nuevas Tareas</h3>
-                        {realtimeTasks && realtimeTasks.length > 0 ? (
-                             realtimeTasks.slice(0,3).map((t, i) => (
-                                <div key={i} className="text-sm text-blue-700 truncate">• {t.title}</div>
-                             ))
-                        ) : (
-                            <p className="text-xs text-blue-500">No hay tareas pendientes</p>
-                        )}
-                    </div>
+                <div className="flex items-center justify-between py-3 border-b border-gray-800/50">
+                  <span className="text-gray-400 text-sm">Lecciones</span>
+                  <span className="text-white font-semibold">{stats?.completedLessons || 12}</span>
                 </div>
-            </div>
-
-            {/* Acciones Rápidas */}
-            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                <h2 className="text-lg font-semibold text-gray-900">Acciones Rápidas</h2>
+                <div className="flex items-center justify-between py-3 border-b border-gray-800/50">
+                  <span className="text-gray-400 text-sm">Horas de estudio</span>
+                  <span className="text-white font-semibold">{stats?.studyHours || 24}h</span>
+                </div>
+                <div className="flex items-center justify-between py-3">
+                  <span className="text-gray-400 text-sm">Racha</span>
+                  <span className="text-cyan-400 font-semibold">🔥 {stats?.streak || 5} días</span>
+                </div>
               </div>
-              <div className="p-4 space-y-2">
-                <Link 
-                  href="/cursos"
-                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors group"
-                >
-                  <div className="p-2 bg-indigo-100 rounded-lg mr-3 group-hover:bg-indigo-200 transition-colors">
-                     <BookOpen className="h-5 w-5 text-indigo-600" />
-                  </div>
-                  Explorar Catálogo
-                </Link>
-                <Link 
-                  href="/dashboard/student/courses"
-                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors group"
-                >
-                   <div className="p-2 bg-green-100 rounded-lg mr-3 group-hover:bg-green-200 transition-colors">
-                     <BarChart3 className="h-5 w-5 text-green-600" />
-                   </div>
-                  Mis Cursos
-                </Link>
-                <Link 
-                  href="/dashboard/student/settings"
-                  className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors group"
-                >
-                   <div className="p-2 bg-gray-100 rounded-lg mr-3 group-hover:bg-gray-200 transition-colors">
-                     <Target className="h-5 w-5 text-gray-600" />
-                   </div>
-                  Configuración
-                </Link>
-              </div>
-            </div>
+            </section>
 
-            {/* Logros (Simplificado) */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Últimos Logros</h2>
+            {/* LOGROS */}
+            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+                <Award className="w-5 h-5 text-yellow-400" />
+                Logros
+              </h3>
+              
+              <div className="space-y-3">
                 {completedCourses.length > 0 ? (
-                    completedCourses.slice(0,3).map((e, i) => (
-                        <div key={i} className="flex items-center gap-3 mb-3">
-                            <Star className="text-yellow-400 h-5 w-5" />
-                            <span className="text-sm font-medium">{e.course?.title}</span>
-                        </div>
-                    ))
-                ) : (
-                    <div className="text-center py-4">
-                        <Trophy className="h-10 w-10 text-gray-300 mx-auto mb-2"/>
-                        <p className="text-xs text-gray-400">Completa cursos para ganar insignias</p>
+                  completedCourses.slice(0, 3).map((course: any, idx: number) => (
+                    <div key={idx} className="flex items-center gap-3 bg-[#030712] rounded-lg p-3 border border-gray-800/50">
+                      <div className="w-9 h-9 bg-yellow-500/10 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Trophy className="w-4 h-4 text-yellow-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-white truncate">{course.courses?.title || 'Curso'}</p>
+                        <p className="text-xs text-gray-500">Completado</p>
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-6">
+                    <Trophy className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+                    <p className="text-gray-500 text-sm">Completa cursos para logros</p>
+                  </div>
                 )}
-            </div>
+              </div>
+            </section>
 
-          </div>
+            {/* NOTIFICACIONES */}
+            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-cyan-400" />
+                Notificaciones
+              </h3>
+              
+              <div className="text-center py-6">
+                <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Bell className="w-6 h-6 text-gray-600" />
+                </div>
+                <p className="text-gray-500 text-sm">Sin notificaciones</p>
+              </div>
+            </section>
+
+          </aside>
         </div>
+
       </div>
     </div>
   )
 }
-
-// Exportar con protección
-export default withAuth(StudentDashboard, { 
-  requireAuth: true, 
-  requireRole: 'student' 
-})

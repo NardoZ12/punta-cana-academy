@@ -52,11 +52,49 @@ interface Stats {
 
 interface Question {
   text: string;
+  type: 'multiple_choice' | 'true_false' | 'short_answer' | 'essay';
   optionA: string;
   optionB: string;
   optionC: string;
+  optionD: string;
   correct: string;
+  points: number;
 }
+
+// Tipos para tareas avanzadas
+const ASSIGNMENT_TYPES = [
+  { value: 'file_upload', label: 'Subir archivo', icon: '📎' },
+  { value: 'video_analysis', label: 'Análisis de video', icon: '🎥' },
+  { value: 'project_delivery', label: 'Entrega de proyecto', icon: '📦' },
+  { value: 'practical_exercise', label: 'Ejercicio práctico', icon: '✏️' },
+  { value: 'written_report', label: 'Informe escrito', icon: '📝' },
+  { value: 'presentation', label: 'Presentación', icon: '📊' },
+];
+
+const ALLOWED_FILE_TYPES = [
+  { value: 'pdf', label: 'PDF' },
+  { value: 'doc', label: 'Word (DOC/DOCX)' },
+  { value: 'xls', label: 'Excel (XLS/XLSX)' },
+  { value: 'ppt', label: 'PowerPoint (PPT/PPTX)' },
+  { value: 'img', label: 'Imágenes (JPG/PNG)' },
+  { value: 'video', label: 'Videos (MP4/MOV)' },
+  { value: 'zip', label: 'Archivos ZIP' },
+];
+
+// Tipos para exámenes avanzados
+const EXAM_SCOPES = [
+  { value: 'topic_quiz', label: 'Quiz de tema', desc: 'Evaluación rápida de un tema' },
+  { value: 'unit_exam', label: 'Examen de unidad', desc: 'Evaluación completa de unidad' },
+  { value: 'course_final', label: 'Examen final', desc: 'Evaluación final del curso' },
+  { value: 'practice', label: 'Práctica', desc: 'Sin calificación, solo práctica' },
+];
+
+const QUESTION_TYPES = [
+  { value: 'multiple_choice', label: 'Opción múltiple' },
+  { value: 'true_false', label: 'Verdadero/Falso' },
+  { value: 'short_answer', label: 'Respuesta corta' },
+  { value: 'essay', label: 'Ensayo/Desarrollo' },
+];
 
 export default function TeacherDashboard() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -80,10 +118,31 @@ export default function TeacherDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [targetStudentId, setTargetStudentId] = useState<string>('all');
 
-  const [taskData, setTaskData] = useState({ title: '', description: '', date: '' });
-  const [examData, setExamData] = useState({ title: '', date: '', duration: 60 });
+  const [taskData, setTaskData] = useState({ 
+    title: '', 
+    description: '', 
+    date: '',
+    assignment_type: 'file_upload',
+    max_points: 100,
+    max_file_size_mb: 10,
+    allowed_file_types: ['pdf', 'doc'] as string[],
+    rubric: '',
+    attached_links: [] as string[],
+    newLink: ''
+  });
+  const [examData, setExamData] = useState({ 
+    title: '', 
+    date: '', 
+    duration: 60,
+    scope: 'unit_exam',
+    passing_score: 60,
+    max_attempts: 1,
+    shuffle_questions: false,
+    shuffle_options: false,
+    show_correct_answers: true
+  });
   const [questions, setQuestions] = useState<Question[]>([
-    { text: '', optionA: '', optionB: '', optionC: '', correct: 'a' }
+    { text: '', type: 'multiple_choice', optionA: '', optionB: '', optionC: '', optionD: '', correct: 'a', points: 10 }
   ]);
 
   useEffect(() => {
@@ -218,13 +277,37 @@ export default function TeacherDashboard() {
   }, [selectedCourseId]);
 
   const handleAddQuestion = () => {
-    setQuestions([...questions, { text: '', optionA: '', optionB: '', optionC: '', correct: 'a' }]);
+    setQuestions([...questions, { text: '', type: 'multiple_choice', optionA: '', optionB: '', optionC: '', optionD: '', correct: 'a', points: 10 }]);
   };
 
-  const handleQuestionChange = (index: number, field: string, value: string) => {
+  const handleQuestionChange = (index: number, field: string, value: string | number) => {
     const newQ = [...questions];
     newQ[index] = { ...newQ[index], [field]: value };
     setQuestions(newQ);
+  };
+
+  const handleAddLink = () => {
+    if (taskData.newLink.trim()) {
+      setTaskData({
+        ...taskData,
+        attached_links: [...taskData.attached_links, taskData.newLink.trim()],
+        newLink: ''
+      });
+    }
+  };
+
+  const handleRemoveLink = (idx: number) => {
+    setTaskData({
+      ...taskData,
+      attached_links: taskData.attached_links.filter((_, i) => i !== idx)
+    });
+  };
+
+  const toggleFileType = (type: string) => {
+    const types = taskData.allowed_file_types.includes(type)
+      ? taskData.allowed_file_types.filter(t => t !== type)
+      : [...taskData.allowed_file_types, type];
+    setTaskData({ ...taskData, allowed_file_types: types });
   };
 
   const handleCreateTask = async () => {
@@ -237,12 +320,18 @@ export default function TeacherDashboard() {
       title: taskData.title,
       description: taskData.description,
       due_date: taskData.date,
-      assignment_type: 'task',
+      assignment_type: taskData.assignment_type,
+      max_points: taskData.max_points,
+      max_file_size_mb: taskData.max_file_size_mb,
+      allowed_file_types: taskData.allowed_file_types,
+      rubric: taskData.rubric || null,
+      attached_files: taskData.attached_links.length > 0 ? taskData.attached_links.map(url => ({ type: 'link', url })) : null,
+      target_type: targetStudentId === 'all' ? 'all_students' : 'specific_student',
       is_published: true
     };
 
     if (targetStudentId !== 'all') {
-      payload.student_id = targetStudentId;
+      payload.target_student_id = targetStudentId;
     }
 
     const { error } = await supabase.from('assignments').insert(payload);
@@ -252,7 +341,11 @@ export default function TeacherDashboard() {
     else {
       alert(`✓ Tarea asignada correctamente`);
       setIsTaskModalOpen(false);
-      setTaskData({ title: '', description: '', date: '' });
+      setTaskData({ 
+        title: '', description: '', date: '', assignment_type: 'file_upload',
+        max_points: 100, max_file_size_mb: 10, allowed_file_types: ['pdf', 'doc'],
+        rubric: '', attached_links: [], newLink: ''
+      });
       setTargetStudentId('all');
       window.location.reload();
     }
@@ -263,52 +356,77 @@ export default function TeacherDashboard() {
     setSubmitting(true);
     const supabase = createClient();
 
-    const quizData = {
-      title: examData.title,
-      time_limit_minutes: examData.duration,
-      questions: questions.map((q, idx) => ({
-        id: `q${idx + 1}`,
-        type: 'multiple_choice',
-        points: Math.floor(100 / questions.length),
-        question: q.text,
-        options: [
-          { id: 'a', text: q.optionA },
-          { id: 'b', text: q.optionB },
-          { id: 'c', text: q.optionC }
-        ],
-        correct_answer: q.correct
-      }))
-    };
+    // Calcular puntos totales
+    const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
 
-    const payload: any = {
+    const evaluationPayload = {
       course_id: selectedCourseId,
       title: examData.title,
-      description: `Examen - ${questions.length} preguntas`,
-      due_date: examData.date,
-      assignment_type: 'exam',
-      max_score: 100,
-      quiz_data: quizData,
+      scope: examData.scope,
+      time_limit_minutes: examData.duration,
+      passing_score: examData.passing_score,
+      max_attempts: examData.max_attempts,
+      shuffle_questions: examData.shuffle_questions,
+      shuffle_options: examData.shuffle_options,
+      show_correct_answers: examData.show_correct_answers,
+      questions: questions.map((q, idx) => ({
+        id: `q${idx + 1}`,
+        type: q.type,
+        points: q.points,
+        question: q.text,
+        options: q.type === 'true_false' 
+          ? [{ id: 'true', text: 'Verdadero' }, { id: 'false', text: 'Falso' }]
+          : q.type === 'multiple_choice' 
+            ? [
+                { id: 'a', text: q.optionA },
+                { id: 'b', text: q.optionB },
+                { id: 'c', text: q.optionC },
+                { id: 'd', text: q.optionD }
+              ].filter(o => o.text.trim())
+            : null,
+        correct_answer: q.type === 'true_false' ? q.correct : q.correct
+      })),
+      max_score: totalPoints,
+      available_from: examData.date || null,
       is_published: true
     };
 
-    if (targetStudentId !== 'all') {
-      payload.student_id = targetStudentId;
-    }
-
-    const { error } = await supabase.from('assignments').insert(payload);
+    const { error } = await supabase.from('evaluations').insert(evaluationPayload);
 
     setSubmitting(false);
     
     if (error) {
-      alert('Error: ' + error.message);
-    } else {
-      alert(`✓ Examen creado correctamente`);
-      setIsExamModalOpen(false);
-      setExamData({ title: '', date: '', duration: 60 });
-      setQuestions([{ text: '', optionA: '', optionB: '', optionC: '', correct: 'a' }]);
-      setTargetStudentId('all');
-      window.location.reload();
+      // Si la tabla evaluations no existe, usar assignments como fallback
+      console.error('Error en evaluations:', error);
+      const fallbackPayload: any = {
+        course_id: selectedCourseId,
+        title: examData.title,
+        description: `Examen - ${questions.length} preguntas`,
+        due_date: examData.date,
+        assignment_type: 'exam',
+        max_points: totalPoints,
+        quiz_data: evaluationPayload,
+        is_published: true
+      };
+      if (targetStudentId !== 'all') fallbackPayload.target_student_id = targetStudentId;
+      
+      const { error: fallbackError } = await supabase.from('assignments').insert(fallbackPayload);
+      if (fallbackError) {
+        alert('Error: ' + fallbackError.message);
+        return;
+      }
     }
+    
+    alert(`✓ Examen creado correctamente`);
+    setIsExamModalOpen(false);
+    setExamData({ 
+      title: '', date: '', duration: 60, scope: 'unit_exam',
+      passing_score: 60, max_attempts: 1, shuffle_questions: false,
+      shuffle_options: false, show_correct_answers: true
+    });
+    setQuestions([{ text: '', type: 'multiple_choice', optionA: '', optionB: '', optionC: '', optionD: '', correct: 'a', points: 10 }]);
+    setTargetStudentId('all');
+    window.location.reload();
   };
 
   const currentCourse = courses.find(c => c.id === selectedCourseId);
@@ -616,11 +734,11 @@ export default function TeacherDashboard() {
         </div>
       </div>
 
-      {/* MODAL TAREA */}
+      {/* MODAL TAREA AVANZADO */}
       {isTaskModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800">
+          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800 flex-shrink-0">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <FileText className="w-5 h-5 text-cyan-400" />
                 Nueva Tarea
@@ -630,7 +748,29 @@ export default function TeacherDashboard() {
               </button>
             </div>
             
-            <div className="p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Tipo de tarea */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Tipo de tarea</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ASSIGNMENT_TYPES.map(type => (
+                    <button
+                      key={type.value}
+                      onClick={() => setTaskData({ ...taskData, assignment_type: type.value })}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        taskData.assignment_type === type.value
+                          ? 'border-cyan-500 bg-cyan-500/10'
+                          : 'border-gray-800 hover:border-gray-700'
+                      }`}
+                    >
+                      <span className="text-lg mb-1 block">{type.icon}</span>
+                      <span className="text-xs text-white">{type.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Asignar a */}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Asignar a</label>
                 <select 
@@ -645,39 +785,125 @@ export default function TeacherDashboard() {
                 </select>
               </div>
 
+              {/* Título y descripción */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-400 mb-1.5">Título *</label>
+                  <input 
+                    type="text" 
+                    placeholder="Nombre de la tarea"
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                    value={taskData.title} 
+                    onChange={e => setTaskData({...taskData, title: e.target.value})} 
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-400 mb-1.5">Instrucciones</label>
+                  <textarea 
+                    placeholder="Describe lo que deben hacer los estudiantes..."
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm h-24 resize-none focus:border-cyan-500 focus:outline-none"
+                    value={taskData.description} 
+                    onChange={e => setTaskData({...taskData, description: e.target.value})} 
+                  />
+                </div>
+              </div>
+
+              {/* Puntos y fecha */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Puntos máximos</label>
+                  <input 
+                    type="number" 
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                    value={taskData.max_points} 
+                    onChange={e => setTaskData({...taskData, max_points: parseInt(e.target.value) || 100})} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Fecha límite</label>
+                  <input 
+                    type="datetime-local" 
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                    value={taskData.date} 
+                    onChange={e => setTaskData({...taskData, date: e.target.value})} 
+                  />
+                </div>
+              </div>
+
+              {/* Tipos de archivo permitidos */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Título</label>
+                <label className="block text-sm text-gray-400 mb-2">Tipos de archivo permitidos</label>
+                <div className="flex flex-wrap gap-2">
+                  {ALLOWED_FILE_TYPES.map(ft => (
+                    <button
+                      key={ft.value}
+                      onClick={() => toggleFileType(ft.value)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        taskData.allowed_file_types.includes(ft.value)
+                          ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                          : 'bg-gray-800 text-gray-400 border border-gray-700 hover:border-gray-600'
+                      }`}
+                    >
+                      {ft.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tamaño máximo */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Tamaño máximo de archivo (MB)</label>
                 <input 
-                  type="text" 
-                  placeholder="Nombre de la tarea"
+                  type="number" 
                   className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
-                  value={taskData.title} 
-                  onChange={e => setTaskData({...taskData, title: e.target.value})} 
+                  value={taskData.max_file_size_mb} 
+                  onChange={e => setTaskData({...taskData, max_file_size_mb: parseInt(e.target.value) || 10})} 
                 />
               </div>
 
+              {/* Rúbrica */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Instrucciones</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Rúbrica de evaluación (opcional)</label>
                 <textarea 
-                  placeholder="Describe lo que deben hacer los estudiantes..."
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm h-24 resize-none focus:border-cyan-500 focus:outline-none"
-                  value={taskData.description} 
-                  onChange={e => setTaskData({...taskData, description: e.target.value})} 
+                  placeholder="Criterios de evaluación..."
+                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm h-20 resize-none focus:border-cyan-500 focus:outline-none"
+                  value={taskData.rubric} 
+                  onChange={e => setTaskData({...taskData, rubric: e.target.value})} 
                 />
               </div>
 
+              {/* Links adjuntos */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Fecha límite</label>
-                <input 
-                  type="datetime-local" 
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
-                  value={taskData.date} 
-                  onChange={e => setTaskData({...taskData, date: e.target.value})} 
-                />
+                <label className="block text-sm text-gray-400 mb-1.5">Enlaces de referencia</label>
+                <div className="flex gap-2 mb-2">
+                  <input 
+                    type="url" 
+                    placeholder="https://..."
+                    className="flex-1 bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                    value={taskData.newLink}
+                    onChange={e => setTaskData({...taskData, newLink: e.target.value})}
+                    onKeyPress={e => e.key === 'Enter' && handleAddLink()}
+                  />
+                  <button onClick={handleAddLink} className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-700">
+                    Agregar
+                  </button>
+                </div>
+                {taskData.attached_links.length > 0 && (
+                  <div className="space-y-1">
+                    {taskData.attached_links.map((link, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-[#030712] border border-gray-800 rounded-lg px-3 py-2">
+                        <span className="flex-1 text-xs text-cyan-400 truncate">{link}</span>
+                        <button onClick={() => handleRemoveLink(idx)} className="text-red-400 hover:text-red-300">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="flex gap-3 p-5 border-t border-gray-800">
+            <div className="flex gap-3 p-5 border-t border-gray-800 flex-shrink-0">
               <button 
                 onClick={() => setIsTaskModalOpen(false)}
                 className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
@@ -696,10 +922,10 @@ export default function TeacherDashboard() {
         </div>
       )}
 
-      {/* MODAL EXAMEN */}
+      {/* MODAL EXAMEN AVANZADO */}
       {isExamModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b border-gray-800 flex-shrink-0">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Clock className="w-5 h-5 text-cyan-400" />
@@ -710,7 +936,29 @@ export default function TeacherDashboard() {
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Alcance del examen */}
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Tipo de evaluación</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {EXAM_SCOPES.map(scope => (
+                    <button
+                      key={scope.value}
+                      onClick={() => setExamData({ ...examData, scope: scope.value })}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        examData.scope === scope.value
+                          ? 'border-cyan-500 bg-cyan-500/10'
+                          : 'border-gray-800 hover:border-gray-700'
+                      }`}
+                    >
+                      <span className="text-sm text-white font-medium">{scope.label}</span>
+                      <p className="text-xs text-gray-500 mt-0.5">{scope.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Configuración básica */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-400 mb-1.5">Asignar a</label>
@@ -726,7 +974,7 @@ export default function TeacherDashboard() {
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm text-gray-400 mb-1.5">Título del examen</label>
+                  <label className="block text-sm text-gray-400 mb-1.5">Título del examen *</label>
                   <input 
                     type="text" 
                     placeholder="Ej: Examen Parcial 1"
@@ -736,7 +984,7 @@ export default function TeacherDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1.5">Fecha</label>
+                  <label className="block text-sm text-gray-400 mb-1.5">Disponible desde</label>
                   <input 
                     type="datetime-local" 
                     className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
@@ -755,13 +1003,81 @@ export default function TeacherDashboard() {
                 </div>
               </div>
 
-              <div className="border-t border-gray-800 pt-4">
-                <h3 className="text-sm font-medium text-gray-300 mb-3">Preguntas</h3>
+              {/* Configuración avanzada */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Nota mínima (%)</label>
+                  <input 
+                    type="number" 
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                    value={examData.passing_score} 
+                    onChange={e => setExamData({...examData, passing_score: parseInt(e.target.value) || 60})} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1.5">Intentos máx.</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                    value={examData.max_attempts} 
+                    onChange={e => setExamData({...examData, max_attempts: parseInt(e.target.value) || 1})} 
+                  />
+                </div>
+                <div className="flex flex-col justify-end">
+                  <div className="flex items-center gap-2 mb-2">
+                    <input 
+                      type="checkbox" 
+                      id="shuffle-q"
+                      checked={examData.shuffle_questions}
+                      onChange={e => setExamData({...examData, shuffle_questions: e.target.checked})}
+                      className="accent-cyan-500"
+                    />
+                    <label htmlFor="shuffle-q" className="text-xs text-gray-400">Mezclar preguntas</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id="shuffle-o"
+                      checked={examData.shuffle_options}
+                      onChange={e => setExamData({...examData, shuffle_options: e.target.checked})}
+                      className="accent-cyan-500"
+                    />
+                    <label htmlFor="shuffle-o" className="text-xs text-gray-400">Mezclar opciones</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preguntas */}
+              <div className="border-t border-gray-800 pt-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-medium text-white">Preguntas ({questions.length})</h3>
+                  <span className="text-xs text-gray-500">Total: {questions.reduce((s, q) => s + q.points, 0)} pts</span>
+                </div>
                 <div className="space-y-4">
                   {questions.map((q, idx) => (
                     <div key={idx} className="bg-[#030712] border border-gray-800 rounded-xl p-4">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-sm text-cyan-400 font-medium">Pregunta {idx + 1}</span>
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-cyan-400 font-medium">#{idx + 1}</span>
+                          <select
+                            value={q.type}
+                            onChange={e => handleQuestionChange(idx, 'type', e.target.value)}
+                            className="bg-[#0a0f1a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-cyan-500 focus:outline-none"
+                          >
+                            {QUESTION_TYPES.map(qt => (
+                              <option key={qt.value} value={qt.value}>{qt.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            value={q.points}
+                            onChange={e => handleQuestionChange(idx, 'points', parseInt(e.target.value as string) || 10)}
+                            className="w-16 bg-[#0a0f1a] border border-gray-700 rounded-lg px-2 py-1 text-xs text-white text-center focus:border-cyan-500 focus:outline-none"
+                            placeholder="Pts"
+                          />
+                          <span className="text-xs text-gray-500">pts</span>
+                        </div>
                         {questions.length > 1 && (
                           <button 
                             onClick={() => setQuestions(questions.filter((_, i) => i !== idx))}
@@ -780,35 +1096,73 @@ export default function TeacherDashboard() {
                         onChange={e => handleQuestionChange(idx, 'text', e.target.value)} 
                       />
                       
-                      <div className="grid grid-cols-3 gap-2">
-                        {['A', 'B', 'C'].map((opt) => (
-                          <div 
-                            key={opt} 
-                            className={`border rounded-lg p-2 flex items-center gap-2 cursor-pointer transition-colors ${
-                              q.correct === opt.toLowerCase() 
-                                ? 'border-green-500 bg-green-500/10' 
-                                : 'border-gray-700 hover:border-gray-600'
-                            }`}
-                            onClick={() => handleQuestionChange(idx, 'correct', opt.toLowerCase())}
-                          >
-                            <input 
-                              type="radio" 
-                              name={`correct-${idx}`} 
-                              checked={q.correct === opt.toLowerCase()} 
-                              readOnly
-                              className="accent-green-500 w-3 h-3"
-                            />
-                            <input 
-                              type="text" 
-                              placeholder={`Opción ${opt}`}
-                              className="bg-transparent border-none outline-none w-full text-xs text-white"
-                              value={opt === 'A' ? q.optionA : opt === 'B' ? q.optionB : q.optionC}
-                              onChange={(e) => handleQuestionChange(idx, `option${opt}`, e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </div>
-                        ))}
-                      </div>
+                      {/* Opciones según tipo */}
+                      {q.type === 'multiple_choice' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          {['A', 'B', 'C', 'D'].map((opt) => (
+                            <div 
+                              key={opt} 
+                              className={`border rounded-lg p-2 flex items-center gap-2 cursor-pointer transition-colors ${
+                                q.correct === opt.toLowerCase() 
+                                  ? 'border-green-500 bg-green-500/10' 
+                                  : 'border-gray-700 hover:border-gray-600'
+                              }`}
+                              onClick={() => handleQuestionChange(idx, 'correct', opt.toLowerCase())}
+                            >
+                              <input 
+                                type="radio" 
+                                name={`correct-${idx}`} 
+                                checked={q.correct === opt.toLowerCase()} 
+                                readOnly
+                                className="accent-green-500 w-3 h-3"
+                              />
+                              <input 
+                                type="text" 
+                                placeholder={`Opción ${opt}`}
+                                className="bg-transparent border-none outline-none w-full text-xs text-white"
+                                value={opt === 'A' ? q.optionA : opt === 'B' ? q.optionB : opt === 'C' ? q.optionC : q.optionD}
+                                onChange={(e) => handleQuestionChange(idx, `option${opt}`, e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {q.type === 'true_false' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          {['true', 'false'].map((opt) => (
+                            <div 
+                              key={opt} 
+                              className={`border rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                                q.correct === opt 
+                                  ? 'border-green-500 bg-green-500/10' 
+                                  : 'border-gray-700 hover:border-gray-600'
+                              }`}
+                              onClick={() => handleQuestionChange(idx, 'correct', opt)}
+                            >
+                              <input 
+                                type="radio" 
+                                name={`tf-${idx}`} 
+                                checked={q.correct === opt} 
+                                readOnly
+                                className="accent-green-500 w-3 h-3"
+                              />
+                              <span className="text-sm text-white">{opt === 'true' ? 'Verdadero' : 'Falso'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {(q.type === 'short_answer' || q.type === 'essay') && (
+                        <div className="bg-[#0a0f1a] border border-gray-700 rounded-lg p-3">
+                          <p className="text-xs text-gray-500">
+                            {q.type === 'short_answer' 
+                              ? 'El estudiante escribirá una respuesta corta (máx 200 caracteres)' 
+                              : 'El estudiante escribirá un desarrollo extenso. Requiere calificación manual.'}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -819,6 +1173,18 @@ export default function TeacherDashboard() {
                 >
                   + Agregar pregunta
                 </button>
+              </div>
+
+              {/* Mostrar respuestas */}
+              <div className="flex items-center gap-3 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="show-answers"
+                  checked={examData.show_correct_answers}
+                  onChange={e => setExamData({...examData, show_correct_answers: e.target.checked})}
+                  className="accent-cyan-500"
+                />
+                <label htmlFor="show-answers" className="text-sm text-gray-400">Mostrar respuestas correctas al finalizar</label>
               </div>
             </div>
 

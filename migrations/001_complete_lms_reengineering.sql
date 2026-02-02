@@ -402,7 +402,36 @@ DROP TRIGGER IF EXISTS update_unit_progress_modtime ON public.unit_progress;
 CREATE TRIGGER update_unit_progress_modtime BEFORE UPDATE ON public.unit_progress FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =================================================================
--- 7. RLS POLICIES
+-- 7. ASEGURAR COLUMNAS EXISTEN (para migraciones sobre tablas existentes)
+-- =================================================================
+
+DO $$ BEGIN
+    ALTER TABLE public.course_units ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE public.unit_topics ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE public.evaluations ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+-- =================================================================
+-- 8. RLS POLICIES
 -- =================================================================
 
 ALTER TABLE public.course_units ENABLE ROW LEVEL SECURITY;

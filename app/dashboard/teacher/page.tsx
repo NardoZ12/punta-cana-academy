@@ -81,8 +81,10 @@ export default function TeacherDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+      <div className="min-h-screen bg-[#0f1115] flex flex-col items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mb-4"></div>
+        <p className="text-gray-400 text-sm">Cargando panel de profesor...</p>
+        <p className="text-gray-600 text-xs mt-2">Esto puede tardar unos segundos</p>
       </div>
     );
   }

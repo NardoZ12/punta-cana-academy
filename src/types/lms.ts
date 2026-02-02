@@ -39,13 +39,33 @@ export interface Course {
   // Relaciones
   instructor?: Profile
   lessons?: CourseLesson[]
+  units?: CourseUnit[]
   enrollments?: Enrollment[]
+}
+
+export interface CourseUnit {
+  id: string
+  course_id: string
+  title: string
+  description?: string
+  order_index: number
+  is_published: boolean
+  created_at: string
+  updated_at?: string
+  
+  // Relaciones
+  course?: Course
+  lessons?: CourseLesson[]
 }
 
 export interface CourseLesson {
   id: string
   course_id: string
+  unit_id?: string
   title: string
+  introduction?: string
+  pdf_url?: string
+  slide_url?: string
   content?: string
   video_url?: string
   duration_minutes: number
@@ -56,6 +76,7 @@ export interface CourseLesson {
   
   // Relaciones
   course?: Course
+  unit?: CourseUnit
   progress?: LessonProgress[]
 }
 
@@ -96,6 +117,9 @@ export interface LessonProgress {
 export interface Assignment {
   id: string
   course_id: string
+  unit_id?: string
+  lesson_id?: string
+  student_id?: string
   title: string
   description?: string
   type: 'task' | 'quiz'

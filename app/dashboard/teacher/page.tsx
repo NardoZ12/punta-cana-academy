@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/atoms/Button';
 import { createClient } from '@/utils/supabase/client';
+import { CourseStats } from '@/components/molecules/CourseStats';
 
 interface Course {
   id: string;
@@ -13,22 +14,30 @@ interface Course {
   created_at: string;
 }
 
+interface StudentProfile {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
 interface Enrollment {
   progress: number;
   grade: number;
   student_id: string;
-  profiles?: {
-    id: string;
-    full_name: string;
-    email: string;
-  };
+  profiles?: StudentProfile;
 }
 
 interface TeacherStats {
   totalStudents: number;
   totalCourses: number;
   averageGrade: number;
+  passRate: number;
   pendingAssignments: number;
+}
+
+interface GradeDistribution {
+  range: string;
+  count: number;
 }
 
 interface Question {
@@ -42,6 +51,7 @@ interface Question {
 export default function TeacherDashboard() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [students, setStudents] = useState<StudentProfile[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,19 +60,48 @@ export default function TeacherDashboard() {
     totalStudents: 0,
     totalCourses: 0,
     averageGrade: 0,
+    passRate: 0,
     pendingAssignments: 0
   });
+  const [gradeDistribution, setGradeDistribution] = useState<GradeDistribution[]>([
+    { range: '0-59', count: 0 },
+    { range: '60-69', count: 0 },
+    { range: '70-79', count: 0 },
+    { range: '80-89', count: 0 },
+    { range: '90-100', count: 0 },
+  ]);
 
   const [pendingAssignments, setPendingAssignments] = useState<any[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [targetStudentId, setTargetStudentId] = useState<string>('all');
 
   const [taskData, setTaskData] = useState({ title: '', description: '', date: '' });
   const [examData, setExamData] = useState({ title: '', date: '', duration: 60 });
   const [questions, setQuestions] = useState<Question[]>([
     { text: '', optionA: '', optionB: '', optionC: '', correct: 'a' }
   ]);
+
+  // Función para calcular estadísticas
+  const calculateStats = (enrollmentsData: Enrollment[]) => {
+    if (!enrollmentsData.length) return null;
+    
+    const grades = enrollmentsData.map(e => e.grade || 0);
+    const avg = Math.round(grades.reduce((a, b) => a + b, 0) / grades.length);
+    const passed = grades.filter(g => g >= 70).length;
+    const passRate = Math.round((passed / grades.length) * 100);
+
+    const distribution = [
+      { range: '0-59', count: grades.filter(g => g < 60).length },
+      { range: '60-69', count: grades.filter(g => g >= 60 && g < 70).length },
+      { range: '70-79', count: grades.filter(g => g >= 70 && g < 80).length },
+      { range: '80-89', count: grades.filter(g => g >= 80 && g < 90).length },
+      { range: '90-100', count: grades.filter(g => g >= 90).length },
+    ];
+
+    return { avg, passRate, distribution };
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -125,12 +164,12 @@ export default function TeacherDashboard() {
 
           setPendingAssignments(assignments || []);
 
-          setStats({
+          setStats(prev => ({
+            ...prev,
             totalStudents: studentCount || 0,
             totalCourses: coursesData.length,
-            averageGrade: 0,
             pendingAssignments: assignments?.length || 0
-          });
+          }));
         } else {
           setCourses([]);
         }
@@ -146,11 +185,12 @@ export default function TeacherDashboard() {
     return () => { mounted = false; };
   }, []);
 
+  // Cargar datos del curso cuando cambia la selección
   useEffect(() => {
     if (selectedCourseId) {
       const supabase = createClient();
       
-      async function loadEnrollments() {
+      async function loadCourseDetails() {
         const { data: enrollmentsData } = await supabase
           .from('enrollments')
           .select('student_id, progress, grade')
@@ -158,6 +198,7 @@ export default function TeacherDashboard() {
 
         if (!enrollmentsData || enrollmentsData.length === 0) {
           setEnrollments([]);
+          setStudents([]);
           return;
         }
 
@@ -173,9 +214,24 @@ export default function TeacherDashboard() {
         }));
 
         setEnrollments(enrichedEnrollments);
+        
+        // Extraer estudiantes únicos para el dropdown
+        const uniqueStudents = profiles || [];
+        setStudents(uniqueStudents);
+
+        // Calcular estadísticas
+        const statsData = calculateStats(enrollmentsData);
+        if (statsData) {
+          setStats(prev => ({
+            ...prev,
+            averageGrade: statsData.avg,
+            passRate: statsData.passRate
+          }));
+          setGradeDistribution(statsData.distribution);
+        }
       }
 
-      loadEnrollments();
+      loadCourseDetails();
     }
   }, [selectedCourseId]);
 
@@ -194,21 +250,29 @@ export default function TeacherDashboard() {
     setSubmitting(true);
     const supabase = createClient();
     
-    const { error } = await supabase.from('assignments').insert({
+    const payload: any = {
       course_id: selectedCourseId,
       title: taskData.title,
       description: taskData.description,
       due_date: taskData.date,
       assignment_type: 'task',
       is_published: true
-    });
+    };
+
+    // Asignación específica a un estudiante
+    if (targetStudentId !== 'all') {
+      payload.student_id = targetStudentId;
+    }
+
+    const { error } = await supabase.from('assignments').insert(payload);
 
     setSubmitting(false);
     if (error) alert(error.message);
     else {
-      alert('✅ Tarea asignada!');
+      alert(`✅ Tarea asignada ${targetStudentId !== 'all' ? 'al estudiante' : 'a todo el curso'}!`);
       setIsTaskModalOpen(false);
       setTaskData({ title: '', description: '', date: '' });
+      setTargetStudentId('all');
       window.location.reload();
     }
   };
@@ -235,7 +299,7 @@ export default function TeacherDashboard() {
       }))
     };
 
-    const { error } = await supabase.from('assignments').insert({
+    const payload: any = {
       course_id: selectedCourseId,
       title: examData.title,
       description: `Examen de ${questions.length} preguntas`,
@@ -244,17 +308,24 @@ export default function TeacherDashboard() {
       max_score: 100,
       quiz_data: quizData,
       is_published: true
-    });
+    };
+
+    if (targetStudentId !== 'all') {
+      payload.student_id = targetStudentId;
+    }
+
+    const { error } = await supabase.from('assignments').insert(payload);
 
     setSubmitting(false);
     
     if (error) {
       alert('Error creando examen: ' + error.message);
     } else {
-      alert('✅ Examen guardado correctamente!');
+      alert(`✅ Examen guardado ${targetStudentId !== 'all' ? 'para el estudiante' : 'para todo el curso'}!`);
       setIsExamModalOpen(false);
       setExamData({ title: '', date: '', duration: 60 });
       setQuestions([{ text: '', optionA: '', optionB: '', optionC: '', correct: 'a' }]);
+      setTargetStudentId('all');
       window.location.reload();
     }
   };
@@ -314,6 +385,16 @@ export default function TeacherDashboard() {
             </div>
           </div>
         </div>
+
+        {/* ESTADÍSTICAS DEL CURSO */}
+        {selectedCourseId && students.length > 0 && (
+          <CourseStats 
+            totalStudents={students.length}
+            averageGrade={stats.averageGrade}
+            passRate={stats.passRate}
+            gradeDistribution={gradeDistribution}
+          />
+        )}
 
         {/* NAVEGACIÓN DE CURSOS */}
         <div className="bg-[#161b22] border border-gray-800 rounded-3xl p-6">
@@ -470,6 +551,24 @@ export default function TeacherDashboard() {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-[#161b22] border border-gray-700 rounded-xl p-6 max-w-md w-full">
             <h2 className="text-xl font-bold mb-4">📝 Asignar Tarea</h2>
+            
+            {/* Selector de Asignación */}
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Asignar a:</label>
+              <select 
+                className="w-full bg-[#0f1115] border border-gray-700 rounded p-2 text-white"
+                value={targetStudentId}
+                onChange={(e) => setTargetStudentId(e.target.value)}
+              >
+                <option value="all">👥 Todo el Curso</option>
+                <optgroup label="Estudiantes Específicos">
+                  {students.map(s => (
+                    <option key={s.id} value={s.id}>{s.full_name}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
             <input type="text" placeholder="Título de la tarea" className="w-full bg-[#0f1115] border border-gray-700 rounded p-2 mb-3 text-white"
               value={taskData.title} onChange={e => setTaskData({...taskData, title: e.target.value})} />
             <textarea placeholder="Instrucciones para el estudiante" className="w-full bg-[#0f1115] border border-gray-700 rounded p-2 mb-3 text-white h-24"
@@ -479,7 +578,7 @@ export default function TeacherDashboard() {
               value={taskData.date} onChange={e => setTaskData({...taskData, date: e.target.value})} />
             <div className="flex gap-2">
                <Button fullWidth onClick={handleCreateTask} disabled={submitting}>
-                 {submitting ? 'Guardando...' : '💾 Guardar Tarea'}
+                 {submitting ? 'Guardando...' : '💾 Asignar'}
                </Button>
                <Button variant="outline" fullWidth onClick={() => setIsTaskModalOpen(false)}>Cancelar</Button>
             </div>
@@ -494,6 +593,24 @@ export default function TeacherDashboard() {
             
             <div className="p-6 border-b border-gray-700 bg-[#0f1115] rounded-t-xl">
                <h2 className="text-2xl font-bold text-white mb-4">⏰ Crear Nuevo Examen</h2>
+               
+               {/* Selector de Asignación */}
+               <div className="mb-4">
+                 <label className="block text-sm text-gray-400 mb-1">Asignar a:</label>
+                 <select 
+                   className="w-full bg-[#161b22] border border-gray-600 rounded p-2 text-white"
+                   value={targetStudentId}
+                   onChange={(e) => setTargetStudentId(e.target.value)}
+                 >
+                   <option value="all">👥 Todo el Curso</option>
+                   <optgroup label="Estudiantes Específicos">
+                     {students.map(s => (
+                       <option key={s.id} value={s.id}>{s.full_name}</option>
+                     ))}
+                   </optgroup>
+                 </select>
+               </div>
+
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-sm text-gray-400 mb-1">Título del Examen</label>

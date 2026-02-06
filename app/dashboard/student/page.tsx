@@ -143,7 +143,7 @@ export default function StudentDashboard() {
                   <h3 className="text-gray-300 font-medium mb-2">No tienes cursos activos</h3>
                   <p className="text-gray-500 text-sm mb-4">Explora nuestro catálogo y comienza a aprender</p>
                   <Link 
-                    href="/cursos" 
+                    href="/dashboard/student/courses" 
                     className="inline-flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium px-4 py-2 rounded-lg transition-colors text-sm"
                   >
                     Ver cursos <ChevronRight className="w-4 h-4" />

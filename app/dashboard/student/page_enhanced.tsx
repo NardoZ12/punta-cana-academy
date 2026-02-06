@@ -272,7 +272,7 @@ export default function StudentDashboard() {
             {enrollments.length === 0 ? (
                <div className="bg-gray-800 p-10 rounded-2xl text-center border border-dashed border-gray-700">
                   <p className="text-gray-400 text-lg mb-4">Aún no estás inscrito en ningún curso.</p>
-                  <Link href="/cursos">
+                  <Link href="/dashboard/student/courses">
                      <Button>Explorar Catálogo</Button>
                   </Link>
                </div>
@@ -317,7 +317,7 @@ export default function StudentDashboard() {
                   ))}
                   
                   {/* TARJETA PARA AGREGAR MÁS CURSOS */}
-                  <Link href="/cursos">
+                  <Link href="/dashboard/student/courses">
                      <div className="group bg-gray-800/50 border-2 border-dashed border-gray-700 hover:border-cyan-500/50 rounded-2xl h-full min-h-[320px] flex flex-col items-center justify-center transition duration-300 hover:bg-gray-800/70 cursor-pointer">
                         <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">➕</div>
                         <h3 className="text-lg font-bold text-gray-300 group-hover:text-cyan-400 transition mb-2">Explorar Más Cursos</h3>

@@ -25,8 +25,8 @@ export default function CoursesPage() {
   const { isAuthenticated, profile } = useAuthContext()
   const enrollMutation = useEnrollStudent()
 
-  // Filtrar cursos publicados
-  const publishedCourses = courses.filter(course => course.status === 'published')
+  // Filtrar cursos publicados (is_published = true)
+  const publishedCourses = courses.filter(course => course.is_published === true)
 
   // Filtrar por búsqueda y categoría
   const filteredCourses = publishedCourses.filter(course => {

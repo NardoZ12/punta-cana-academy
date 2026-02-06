@@ -25,6 +25,18 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Forzar colores en formularios con fondo blanco */
+.bg-white input,
+.bg-white select,
+.bg-white textarea {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+}
+
+.bg-white input::placeholder {
+  color: #9ca3af !important;
+}
+
 /* Estilos para el banner de verificación de email */
 .email-verification-banner {
   animation: slideInDown 0.3s ease-out;

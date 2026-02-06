@@ -49,9 +49,9 @@ function AuthCallbackContent() {
             
             setTimeout(() => {
               if (profile?.user_type === 'teacher') {
-                router.push('/dashboard/teacher');
+                router.push('/dashboard/teacher?verified=true');
               } else {
-                router.push('/dashboard/student');
+                router.push('/dashboard/student?verified=true');
               }
             }, 2000);
           } else {

@@ -74,9 +74,13 @@ export default function RegistroPage() {
       setError(authError)
       setLoading(false)
     } else {
-      // Mostrar mensaje de verificación de email
-      alert('¡Registro exitoso! Por favor verifica tu correo electrónico antes de iniciar sesión.')
-      router.push('/login')
+      // Redirigir al dashboard correspondiente
+      // El dashboard mostrará el mensaje de verificar email
+      if (formData.userType === 'teacher') {
+        router.push('/dashboard/teacher?registered=true')
+      } else {
+        router.push('/dashboard/student?registered=true')
+      }
     }
   }
 

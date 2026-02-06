@@ -192,20 +192,36 @@ export function useAuth() {
 
       console.log('✅ Usuario de auth creado:', data.user?.email)
 
-      // Si el usuario se crea exitosamente, crear perfil
+      // Si el usuario se crea exitosamente, intentar crear/actualizar perfil
       if (data.user && !error) {
         try {
           const profile = await createProfile(data.user, userData)
-          console.log('✅ Perfil creado exitosamente para:', profile.full_name)
-        } catch (profileError) {
-          console.error('❌ Error creando perfil después del registro:', profileError)
-          // El usuario se creó pero el perfil falló, devolver el error del perfil
-          throw new Error(`Database error saving new user: ${profileError.message}`)
+          console.log('✅ Perfil creado/actualizado exitosamente para:', profile.full_name)
+          
+          // Actualizar estado con el usuario y perfil
+          setState({
+            user: data.user,
+            profile,
+            session: data.session,
+            loading: false,
+          })
+        } catch (profileError: any) {
+          console.warn('⚠️ Error creando perfil (puede que el trigger ya lo haya creado):', profileError)
+          // No lanzar error - el trigger de la DB probablemente ya creó el perfil
+          // Intentar obtener el perfil existente
+          const existingProfile = await fetchProfile(data.user.id)
+          setState({
+            user: data.user,
+            profile: existingProfile,
+            session: data.session,
+            loading: false,
+          })
         }
+      } else {
+        setState(prev => ({ ...prev, loading: false }))
       }
 
-      setState(prev => ({ ...prev, loading: false }))
-      return { data, error: null }
+      return { data, error: null, userType: userData.user_type || USER_TYPES.STUDENT }
     } catch (error: any) {
       console.error('❌ Error en signUp:', error)
       setState(prev => ({ ...prev, loading: false }))

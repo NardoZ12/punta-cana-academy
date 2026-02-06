@@ -127,9 +127,10 @@ export function useAuth() {
 
       console.log('🔧 Creando perfil con datos:', profileData)
 
+      // Usar upsert para evitar error de clave duplicada (el trigger puede haberlo creado ya)
       const { data, error } = await supabase
         .from('profiles')
-        .insert([profileData])
+        .upsert([profileData], { onConflict: 'id' })
         .select()
         .single()
 

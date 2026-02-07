@@ -1,15 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/link'; // Ojo: en Next 13+ a veces es 'next/navigation'
-import { useRouter as useNav } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/atoms/Button';
 
 export default function CreateCoursePage() {
   const supabase = createClient();
-  const router = useNav();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -23,40 +23,54 @@ export default function CreateCoursePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
-    // 1. Obtener usuario actual
-    const { data: { user } } = await supabase.auth.getUser();
+    try {
+      // 1. Obtener usuario actual
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    if (user) {
-      // 2. Insertar curso
-      const { error } = await supabase
+      if (authError || !user) {
+        setError('Debes iniciar sesión para crear un curso');
+        setLoading(false);
+        return;
+      }
+
+      // 2. Convertir precio a número (0 si no es válido)
+      const priceValue = parseFloat(formData.price.replace(/[^0-9.]/g, '')) || 0;
+
+      // 3. Insertar curso
+      const { data: newCourse, error: insertError } = await supabase
         .from('courses')
         .insert({
           title: formData.title,
           description: formData.description,
-          price: formData.price,
+          price: priceValue,
           level: formData.level,
           modality: formData.modality,
           schedule: formData.schedule,
           instructor_id: user.id,
-          image_url: '/images/courses/default-course.jpg', // Imagen por defecto temporal
+          image_url: '/images/courses/default-course.jpg',
           is_published: true
-        });
+        })
+        .select()
+        .single();
 
-      if (!error) {
-        alert('¡Curso creado! Ahora vamos a añadir el contenido y las fotos. 📸');
-
-        // CAMBIO AQUÍ: En lugar de volver al dashboard, vamos a la página de edición (que crearemos pronto)
-        // Supabase devuelve el objeto creado en 'data' si usas .select() al final del insert
-        // Pero para hacerlo simple por ahora, redirigiremos al dashboard y desde ahí entras a editar.
-
-        router.push('/dashboard/teacher'); 
-        router.refresh();
-      } else {
-        alert('Error al crear curso: ' + error.message);
+      if (insertError) {
+        console.error('Error al crear curso:', insertError);
+        setError('Error al crear curso: ' + insertError.message);
+        setLoading(false);
+        return;
       }
+
+      alert('¡Curso creado exitosamente! 🎉');
+      router.push('/dashboard/teacher');
+
+    } catch (err: any) {
+      console.error('Error inesperado:', err);
+      setError('Error inesperado: ' + err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleChange = (e: any) => {
@@ -68,6 +82,12 @@ export default function CreateCoursePage() {
       <div className="max-w-2xl w-full bg-black border border-gray-800 rounded-2xl p-8 shadow-2xl">
         <h1 className="text-3xl font-bold mb-2">Crear Nuevo Curso</h1>
         <p className="text-gray-400 mb-8">Este curso aparecerá inmediatamente en la página web.</p>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-lg text-red-200">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           
@@ -134,7 +154,12 @@ export default function CreateCoursePage() {
           </div>
 
           <div className="pt-4 flex gap-4">
-            <button type="button" onClick={() => router.back()} className="flex-1 py-3 rounded-lg border border-gray-700 hover:bg-gray-800 transition">
+            <button 
+              type="button" 
+              onClick={() => router.push('/dashboard/teacher')} 
+              className="flex-1 py-3 rounded-lg border border-gray-700 hover:bg-gray-800 transition"
+              disabled={loading}
+            >
               Cancelar
             </button>
             <Button type="submit" disabled={loading} fullWidth className="flex-1">

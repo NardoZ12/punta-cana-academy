@@ -11,12 +11,11 @@ export const metadata = {
   description: 'La academia híbrida más moderna del Caribe.',
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: '32x32', type: 'image/x-icon' },
-      { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
-      { url: '/images/logos/favicon-d.png', sizes: '192x192', type: 'image/png' }
+      { url: '/images/logos/favicon-definitivo.png', sizes: '32x32', type: 'image/png' },
+      { url: '/images/logos/favicon-definitivo.png', sizes: '192x192', type: 'image/png' }
     ],
-    shortcut: '/favicon.ico',
-    apple: '/images/logos/favicon-d.png',
+    shortcut: '/images/logos/favicon-definitivo.png',
+    apple: '/images/logos/favicon-definitivo.png',
   },
 };
 
@@ -33,7 +32,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Punta Cana Academy" />
-        <link rel="apple-touch-icon" href="/images/logos/favicon-d.png" />
+        <link rel="apple-touch-icon" href="/images/logos/favicon-definitivo.png" />
       </head>
       <body className="bg-pca-black">
         <Providers>

@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/atoms/Button';
+import { useRevalidate } from '@/hooks/useRevalidate';
 
 export default function CreateCoursePage() {
   const supabase = createClient();
   const router = useRouter();
+  const { revalidateAfterCourseUpdate } = useRevalidate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +63,9 @@ export default function CreateCoursePage() {
         setLoading(false);
         return;
       }
+
+      // Revalidar para que el curso nuevo aparezca inmediatamente en toda la plataforma
+      await revalidateAfterCourseUpdate(newCourse?.id);
 
       alert('¡Curso creado exitosamente! 🎉');
       router.push('/dashboard/teacher');

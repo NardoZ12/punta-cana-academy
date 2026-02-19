@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/atoms/Button';
+import { useRevalidate } from '@/hooks/useRevalidate';
 
 const TABS = [
   { id: 'general', label: '✏️ General' },
@@ -17,6 +18,8 @@ export default function EditCoursePage() {
   const params = useParams();
   const supabase = createClient();
   const courseId = params?.id as string;
+
+  const { revalidateAfterCourseUpdate } = useRevalidate();
 
   const [activeTab, setActiveTab] = useState('general');
   const [loading, setLoading] = useState(true);
@@ -81,6 +84,7 @@ export default function EditCoursePage() {
 
     if (!error) {
       setFormData({ ...formData, is_published: newStatus });
+      await revalidateAfterCourseUpdate(courseId);
       alert(newStatus ? '¡Curso PUBLICADO! 🚀' : 'Curso ocultado (Borrador) 🔒');
     } else {
       alert('Error al cambiar estado. Verifica que la columna "is_published" exista en Supabase.');
@@ -90,7 +94,10 @@ export default function EditCoursePage() {
   // --- OTRAS FUNCIONES (Guardar, Subir imagen, etc) ---
   const handleSaveGeneral = async () => {
     const { error } = await supabase.from('courses').update(formData).eq('id', courseId);
-    if (!error) alert('¡Información actualizada! ✅');
+    if (!error) {
+      await revalidateAfterCourseUpdate(courseId);
+      alert('¡Información actualizada! ✅');
+    }
   };
 
   const handleChange = (e: any) => {

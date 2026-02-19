@@ -183,13 +183,36 @@ export function useEnrollStudent() {
       if (error) throw new Error(error.message)
       return data
     },
-    onSuccess: (data, { courseId, studentId }) => {
+    onSuccess: async (data, { courseId, studentId }) => {
       // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['student-enrollments', studentId] })
       queryClient.invalidateQueries({ queryKey: ['enrollment-status', courseId, studentId] })
       queryClient.invalidateQueries({ queryKey: ['course', courseId] })
+      queryClient.invalidateQueries({ queryKey: ['student-stats', studentId] })
+      // Revalidar caché del servidor
+      await revalidateServerCache(courseId)
     }
   })
+}
+
+// Función auxiliar para revalidar rutas del servidor
+async function revalidateServerCache(courseId?: string) {
+  try {
+    const paths = [
+      '/',
+      '/cursos',
+      '/dashboard/student',
+      '/dashboard/teacher',
+      ...(courseId ? [`/cursos/${courseId}`] : []),
+    ];
+    await fetch('/api/revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    });
+  } catch (err) {
+    console.warn('Error al revalidar rutas del servidor:', err);
+  }
 }
 
 // Mutación para crear un nuevo curso
@@ -208,10 +231,13 @@ export function useCreateCourse() {
       if (error) throw new Error(error.message)
       return data
     },
-    onSuccess: () => {
+    onSuccess: async (data) => {
       // Invalidar queries de cursos
       queryClient.invalidateQueries({ queryKey: ['courses'] })
       queryClient.invalidateQueries({ queryKey: ['instructor-courses'] })
+      queryClient.invalidateQueries({ queryKey: ['teacher-stats'] })
+      // Revalidar caché del servidor
+      await revalidateServerCache(data?.id)
     }
   })
 }
@@ -233,11 +259,14 @@ export function useUpdateCourse() {
       if (error) throw new Error(error.message)
       return data
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['courses'] })
       queryClient.invalidateQueries({ queryKey: ['course', data.id] })
       queryClient.invalidateQueries({ queryKey: ['instructor-courses'] })
+      queryClient.invalidateQueries({ queryKey: ['teacher-stats'] })
+      // Revalidar caché del servidor
+      await revalidateServerCache(data?.id)
     }
   })
 }
@@ -257,10 +286,14 @@ export function useDeleteCourse() {
       if (error) throw new Error(error.message)
       return courseId
     },
-    onSuccess: () => {
+    onSuccess: async (courseId) => {
       // Invalidar todas las queries de cursos
       queryClient.invalidateQueries({ queryKey: ['courses'] })
       queryClient.invalidateQueries({ queryKey: ['instructor-courses'] })
+      queryClient.invalidateQueries({ queryKey: ['teacher-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['course', courseId] })
+      // Revalidar caché del servidor
+      await revalidateServerCache(courseId)
     }
   })
 }

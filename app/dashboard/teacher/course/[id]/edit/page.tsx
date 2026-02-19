@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import TopicResourceEditor, { TopicResourceData } from '@/components/teacher/TopicResourceEditor';
 import { getVideoInfo } from '@/utils/videoEmbed';
+import { useRevalidate } from '@/hooks/useRevalidate';
 
 // Tipos
 interface CourseUnit {
@@ -155,6 +156,8 @@ export default function EditCoursePage() {
   const supabase = createClient();
   const courseId = params?.id as string;
 
+  const { revalidateAfterCourseUpdate } = useRevalidate();
+
   const [activeTab, setActiveTab] = useState('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -218,13 +221,21 @@ export default function EditCoursePage() {
       duration_hours: courseData.duration_hours, start_date: courseData.start_date || null, end_date: courseData.end_date || null
     }).eq('id', courseId);
     setSaving(false);
-    alert(error ? 'Error: ' + error.message : '✓ Cambios guardados');
+    if (error) {
+      alert('Error: ' + error.message);
+    } else {
+      await revalidateAfterCourseUpdate(courseId);
+      alert('✓ Cambios guardados y publicados en toda la plataforma');
+    }
   };
 
   const handleTogglePublish = async () => {
     const newStatus = !courseData.is_published;
     const { error } = await supabase.from('courses').update({ is_published: newStatus }).eq('id', courseId);
-    if (!error) setCourseData(prev => ({ ...prev, is_published: newStatus }));
+    if (!error) {
+      setCourseData(prev => ({ ...prev, is_published: newStatus }));
+      await revalidateAfterCourseUpdate(courseId);
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

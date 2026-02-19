@@ -502,13 +502,36 @@ export default function TeacherDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#030712] flex items-center justify-center">
-        <div className="text-center">
-          <div className="relative w-16 h-16 mx-auto mb-4">
-            <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20"></div>
-            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-500 animate-spin"></div>
+      <div className="min-h-screen bg-[#030712] text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pt-24">
+          {/* Skeleton header */}
+          <header className="mb-10">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+              <div>
+                <div className="h-4 w-32 bg-gray-800 rounded animate-pulse mb-2"></div>
+                <div className="h-9 w-64 bg-gray-800 rounded animate-pulse mb-2"></div>
+                <div className="h-4 w-48 bg-gray-800/50 rounded animate-pulse"></div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-4 py-3">
+                    <div className="h-3 w-16 bg-gray-800 rounded animate-pulse mb-2"></div>
+                    <div className="h-6 w-10 bg-gray-800 rounded animate-pulse"></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </header>
+          {/* Skeleton cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {[1,2,3].map(i => (
+              <div key={i} className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl p-6">
+                <div className="h-5 w-40 bg-gray-800 rounded animate-pulse mb-4"></div>
+                <div className="h-4 w-full bg-gray-800/50 rounded animate-pulse mb-2"></div>
+                <div className="h-4 w-3/4 bg-gray-800/50 rounded animate-pulse"></div>
+              </div>
+            ))}
           </div>
-          <p className="text-gray-400 text-sm">Cargando panel de profesor...</p>
         </div>
       </div>
     );

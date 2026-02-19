@@ -33,13 +33,25 @@ export default function CourseStudentsProgressPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#030712] flex items-center justify-center">
-        <div className="text-center">
-          <div className="relative w-16 h-16 mx-auto mb-4">
-            <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20"></div>
-            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-500 animate-spin"></div>
+      <div className="min-h-screen bg-[#030712] text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pt-24">
+          <Link 
+            href={`/dashboard/teacher/course/${courseId}/edit`}
+            className="inline-flex items-center gap-2 text-gray-400 hover:text-cyan-400 mb-4 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver al Curso
+          </Link>
+          <div className="h-8 w-64 bg-gray-800 rounded animate-pulse mb-4"></div>
+          <div className="h-4 w-48 bg-gray-800/50 rounded animate-pulse mb-8"></div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl p-5">
+                <div className="h-4 w-20 bg-gray-800 rounded animate-pulse mb-3"></div>
+                <div className="h-8 w-12 bg-gray-800 rounded animate-pulse"></div>
+              </div>
+            ))}
           </div>
-          <p className="text-gray-400 text-sm">Cargando progreso de estudiantes...</p>
         </div>
       </div>
     );

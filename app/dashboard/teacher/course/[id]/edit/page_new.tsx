@@ -145,7 +145,19 @@ export default function EditCoursePage() {
     if (!error) { setNewLessonTitle(''); setAddingLessonToModuleId(null); fetchCourseData(); }
   };
 
-  if (loading) return <div className="p-10 text-white bg-gray-900 min-h-screen">Cargando...</div>;
+  if (loading) return (
+    <div className="min-h-screen bg-gray-900 text-white p-8 font-sans">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <Link href="/dashboard/teacher" className="text-gray-400 hover:text-white text-sm">← Volver</Link>
+          <div className="h-8 w-48 bg-gray-800 rounded animate-pulse mt-2"></div>
+        </div>
+      </div>
+      <div className="flex items-center justify-center py-32">
+        <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8 font-sans">

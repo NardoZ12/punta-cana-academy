@@ -502,7 +502,24 @@ export default function EditCoursePage() {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#030712] flex items-center justify-center"><div className="w-12 h-12 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return (
+    <div className="min-h-screen bg-[#030712] text-white">
+      <div className="sticky top-0 z-40 bg-[#030712]/95 backdrop-blur-sm border-b border-gray-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex items-center gap-4">
+            <Link href="/dashboard/teacher" className="text-gray-400 hover:text-white"><ArrowLeft className="w-5 h-5" /></Link>
+            <div>
+              <div className="h-5 w-48 bg-gray-800 rounded animate-pulse mb-2"></div>
+              <div className="h-3 w-24 bg-gray-800/50 rounded animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-center py-32">
+        <div className="w-12 h-12 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#030712] text-white">

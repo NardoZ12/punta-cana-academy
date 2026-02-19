@@ -31,16 +31,25 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
+  const currentPath = request.nextUrl.pathname
 
   // Proteger rutas del dashboard
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (currentPath.startsWith('/dashboard')) {
     if (!user) {
       const redirectUrl = new URL('/login', request.url)
       return NextResponse.redirect(redirectUrl)
     }
 
-    // Obtener el tipo de usuario para redirigir correctamente
-    if (user) {
+    // SOLO consultar perfil cuando la ruta requiere verificar el rol
+    // (es decir, rutas raíz de /dashboard/teacher o /dashboard/student)
+    // Para sub-rutas como /dashboard/teacher/course/xxx/edit, ya sabemos
+    // que el usuario está autenticado y la ruta padre ya fue verificada.
+    const needsRoleCheck =
+      currentPath === '/dashboard/teacher' ||
+      currentPath === '/dashboard/student' ||
+      currentPath === '/dashboard'
+
+    if (needsRoleCheck) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('user_type')
@@ -48,7 +57,6 @@ export async function middleware(request: NextRequest) {
         .single()
 
       const userType = profile?.user_type || 'student'
-      const currentPath = request.nextUrl.pathname
 
       // Redirigir estudiantes que intentan acceder al dashboard de profesores
       if (currentPath.startsWith('/dashboard/teacher') && userType !== 'teacher') {
@@ -64,8 +72,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Redirigir usuarios autenticados que van a login/registro a su dashboard correspondiente
-  if (['/login', '/registro'].includes(request.nextUrl.pathname) && user) {
+  // Redirigir usuarios autenticados que van a login/registro a su dashboard
+  if (['/login', '/registro'].includes(currentPath) && user) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('user_type')

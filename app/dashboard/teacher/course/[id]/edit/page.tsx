@@ -555,8 +555,11 @@ export default function EditCoursePage() {
     }
   };
 
+  const [savingTopic, setSavingTopic] = useState(false);
+
   const handleUpdateTopic = async (topic: UnitTopic) => {
     console.log('[UpdateTopic] Updating:', topic.id, topic.title);
+    setSavingTopic(true);
     try {
       const { url, headers } = await getSupabaseHeaders();
       const ctrl = new AbortController();
@@ -568,16 +571,27 @@ export default function EditCoursePage() {
         })
       });
       clearTimeout(t);
-      console.log('[UpdateTopic] Response:', res.status);
+      const responseData = await res.text();
+      console.log('[UpdateTopic] Response:', res.status, responseData);
+      setSavingTopic(false);
       if (res.ok) {
+        // Check if rows were actually updated
+        try {
+          const parsed = JSON.parse(responseData);
+          if (Array.isArray(parsed) && parsed.length === 0) {
+            alert('⚠️ No se pudo actualizar. Puede que no tengas permisos (RLS). Contacta al administrador.');
+            return;
+          }
+        } catch {}
         setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
         setEditingTopic(null);
+        console.log('[UpdateTopic] Success!');
       } else {
-        const body = await res.text();
-        alert('Error al actualizar tema: ' + body);
+        alert('Error al actualizar tema: ' + responseData);
       }
     } catch (err: any) {
       console.error('[UpdateTopic] Error:', err);
+      setSavingTopic(false);
       alert('Error al actualizar: ' + err.message);
     }
   };
@@ -1447,7 +1461,15 @@ export default function EditCoursePage() {
             </div>
             <div className="flex gap-3 p-5 border-t border-gray-800">
               <button onClick={() => setEditingTopic(null)} className="flex-1 bg-gray-800 text-white py-2.5 rounded-lg font-medium">Cancelar</button>
-              <button onClick={() => handleUpdateTopic(editingTopic)} className="flex-1 bg-cyan-500 text-black py-2.5 rounded-lg font-medium">Guardar</button>
+              <button 
+                onClick={() => handleUpdateTopic(editingTopic)} 
+                disabled={savingTopic}
+                className="flex-1 bg-cyan-500 text-black py-2.5 rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingTopic ? (
+                  <><div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> Guardando...</>
+                ) : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>

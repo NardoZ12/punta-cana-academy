@@ -391,42 +391,51 @@ export default function EditCoursePage() {
       return;
     }
 
-    // 2. Crear los recursos del tema
+    // 2. Crear los recursos del tema via RPC
     const mainVideo = newTopicData.videos[0];
     const additionalVideos = newTopicData.videos.slice(1);
     const pdfDoc = newTopicData.documents.find(d => d.type === 'pdf');
     const slidesDoc = newTopicData.documents.find(d => d.type === 'slides');
 
-    const resourcePayload = {
-      topic_id: topicData.id,
-      unit_id: newTopicData.unitId,
-      course_id: courseId,
-      introduction: newTopicData.introduction || '',
-      introduction_format: 'markdown',
-      video_url: mainVideo?.url || null,
-      video_provider: mainVideo?.provider && ['youtube','vimeo','cloudflare','bunny','custom'].includes(mainVideo.provider) ? mainVideo.provider : (mainVideo?.url ? 'custom' : null),
-      video_duration_seconds: mainVideo?.duration_seconds || null,
-      pdf_url: pdfDoc?.url || null,
-      pdf_title: pdfDoc?.title || null,
-      slides_url: slidesDoc?.url || null,
-      slides_provider: slidesDoc?.provider || null,
-      is_published: newTopicData.is_published,
-      additional_resources: JSON.stringify({
-        videos: additionalVideos,
-        quiz: newTopicData.quiz
-      })
+    const sanitizeVP = (p: string | undefined | null) => {
+      if (!p) return null;
+      return ['youtube','vimeo','cloudflare','bunny','custom'].includes(p) ? p : 'custom';
+    };
+    const sanitizeSP = (p: string | undefined | null) => {
+      if (!p) return null;
+      return ['google_slides','canva','pdf','custom'].includes(p) ? p : 'custom';
     };
 
-    const { data: resourceData } = await supabase
-      .from('topic_resources')
-      .insert(resourcePayload)
-      .select()
-      .single();
+    const { data: resourceData, error: resError } = await supabase.rpc('save_topic_resources', {
+      p_topic_id: topicData.id,
+      p_unit_id: newTopicData.unitId,
+      p_course_id: courseId,
+      p_introduction: newTopicData.introduction || ' ',
+      p_introduction_format: 'markdown',
+      p_video_url: mainVideo?.url || null,
+      p_video_provider: mainVideo?.url ? sanitizeVP(mainVideo?.provider) : null,
+      p_video_duration_seconds: mainVideo?.duration_seconds || null,
+      p_pdf_url: pdfDoc?.url || null,
+      p_pdf_title: pdfDoc?.title || null,
+      p_slides_url: slidesDoc?.url || null,
+      p_slides_provider: slidesDoc?.url ? sanitizeSP(slidesDoc?.provider) : null,
+      p_is_published: newTopicData.is_published ?? false,
+      p_additional_resources: {
+        videos: additionalVideos || [],
+        quiz: newTopicData.quiz || []
+      }
+    });
+
+    if (resError) {
+      console.error('[CreateTopic] RPC resource error:', resError);
+    }
+
+    const parsedResource = resourceData ? (typeof resourceData === 'string' ? JSON.parse(resourceData) : resourceData) : null;
 
     // 3. Actualizar estado local
     setUnits(units.map(u => u.id === newTopicData.unitId ? {
       ...u,
-      topics: [...(u.topics || []), { ...topicData, resources: resourceData || null }]
+      topics: [...(u.topics || []), { ...topicData, resources: parsedResource || null }]
     } : u));
 
     // 4. Limpiar estados
@@ -456,83 +465,42 @@ export default function EditCoursePage() {
       const valid = ['google_slides', 'canva', 'pdf', 'custom'];
       return valid.includes(p) ? p : 'custom';
     };
-    
-    const payload = {
-      topic_id: topicId,
-      unit_id: topic.unit_id,
-      course_id: courseId,
-      introduction: data.introduction || ' ',
-      introduction_format: data.introduction_format || 'markdown',
-      video_url: mainVideo?.url || null,
-      video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
-      video_duration_seconds: mainVideo?.duration_seconds || null,
-      pdf_url: pdfDoc?.url || null,
-      pdf_title: pdfDoc?.title || null,
-      slides_url: slidesDoc?.url || null,
-      slides_provider: slidesDoc?.url ? sanitizeSlidesProvider(slidesDoc?.provider) : null,
-      is_published: data.is_published ?? false,
-      additional_resources: JSON.stringify({
-        videos: additionalVideos || [],
-        quiz: data.quiz || []
-      })
-    };
 
-    console.log('[SaveResources] Saving for topic:', topicId);
+    console.log('[SaveResources] Calling RPC for topic:', topicId);
 
-    // Strategy: try check existing first, then INSERT or UPDATE separately
-    // (upsert + .select().single() can hang on some PostgREST versions)
     try {
-      // Step 1: Check if resource row exists
-      const { data: existing } = await supabase
-        .from('topic_resources')
-        .select('id')
-        .eq('topic_id', topicId)
-        .maybeSingle();
-
-      console.log('[SaveResources] Existing resource:', existing);
-
-      let savedId: string | null = null;
-
-      if (existing?.id) {
-        // Step 2a: UPDATE existing row (no .select() to avoid PostgREST hang)
-        const { error: updateErr } = await supabase
-          .from('topic_resources')
-          .update(payload)
-          .eq('id', existing.id);
-        
-        if (updateErr) {
-          console.error('[SaveResources] Update error:', updateErr);
-          throw new Error(updateErr.message);
+      // Use RPC function — bypasses RLS and PostgREST quirks entirely
+      const { data: result, error } = await supabase.rpc('save_topic_resources', {
+        p_topic_id: topicId,
+        p_unit_id: topic.unit_id,
+        p_course_id: courseId,
+        p_introduction: data.introduction || ' ',
+        p_introduction_format: data.introduction_format || 'markdown',
+        p_video_url: mainVideo?.url || null,
+        p_video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
+        p_video_duration_seconds: mainVideo?.duration_seconds || null,
+        p_pdf_url: pdfDoc?.url || null,
+        p_pdf_title: pdfDoc?.title || null,
+        p_slides_url: slidesDoc?.url || null,
+        p_slides_provider: slidesDoc?.url ? sanitizeSlidesProvider(slidesDoc?.provider) : null,
+        p_is_published: data.is_published ?? false,
+        p_additional_resources: {
+          videos: additionalVideos || [],
+          quiz: data.quiz || []
         }
-        savedId = existing.id;
-        console.log('[SaveResources] Updated successfully, id:', savedId);
-      } else {
-        // Step 2b: INSERT new row
-        const { data: inserted, error: insertErr } = await supabase
-          .from('topic_resources')
-          .insert(payload)
-          .select('id')
-          .single();
-        
-        if (insertErr) {
-          console.error('[SaveResources] Insert error:', insertErr);
-          throw new Error(insertErr.message);
-        }
-        savedId = inserted?.id || null;
-        console.log('[SaveResources] Inserted successfully, id:', savedId);
+      });
+
+      console.log('[SaveResources] RPC result:', result, 'Error:', error);
+
+      if (error) {
+        console.error('[SaveResources] RPC error:', error);
+        throw new Error(error.message || 'Error al guardar recursos');
       }
 
-      // Step 3: Fetch the saved resource to update local state
-      if (savedId) {
-        const { data: savedResource } = await supabase
-          .from('topic_resources')
-          .select('*')
-          .eq('id', savedId)
-          .single();
-
-        if (savedResource) {
-          setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t) })));
-        }
+      // Update local state with saved resource
+      if (result) {
+        const savedResource = typeof result === 'string' ? JSON.parse(result) : result;
+        setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t) })));
       }
 
       // Close editor

@@ -452,6 +452,9 @@ export default function EditCoursePage() {
     };
     
     const payload = {
+      topic_id: topicId,
+      unit_id: topic.unit_id,
+      course_id: courseId,
       introduction: data.introduction || '',
       introduction_format: data.introduction_format || 'markdown',
       video_url: mainVideo?.url || null,
@@ -461,40 +464,33 @@ export default function EditCoursePage() {
       pdf_title: pdfDoc?.title || null,
       slides_url: slidesDoc?.url || null,
       slides_provider: slidesDoc?.provider || null,
-      is_published: data.is_published || false,
-      // Guardar videos adicionales y quiz como JSON
+      is_published: data.is_published ?? false,
       additional_resources: JSON.stringify({
         videos: additionalVideos,
         quiz: data.quiz
       })
     };
 
-    // Check if resource already exists for this topic
-    let existingId: string | null = null;
-    try {
-      const { data: existing, error: existErr } = await supabase
-        .from('topic_resources')
-        .select('id')
-        .eq('topic_id', topicId)
-        .maybeSingle();
-      if (!existErr && existing) existingId = existing.id;
-    } catch {
-      // If SELECT fails (e.g. RLS), we'll try INSERT
+    console.log('[SaveResources] Upserting for topic:', topicId, payload);
+
+    // Use upsert — inserts if no row for topic_id, updates if exists
+    // This leverages the UNIQUE(topic_id) constraint
+    const { data: result, error } = await supabase
+      .from('topic_resources')
+      .upsert(payload, { onConflict: 'topic_id' })
+      .select()
+      .single();
+
+    console.log('[SaveResources] Result:', result, 'Error:', error);
+    
+    if (error) {
+      console.error('[SaveResources] Error:', error);
+      throw new Error(error.message || 'Error al guardar recursos');
     }
     
-    let result;
-    if (existingId) {
-      result = await supabase.from('topic_resources').update(payload).eq('id', existingId).select().single();
-    } else {
-      result = await supabase.from('topic_resources').insert({ topic_id: topicId, unit_id: topic.unit_id, course_id: courseId, ...payload }).select().single();
-    }
-    
-    if (!result.error && result.data) {
-      setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: result.data as TopicResources } : t) })));
+    if (result) {
+      setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: result as TopicResources } : t) })));
       setEditingResources(null);
-    } else {
-      console.error('Error saving resources:', result.error);
-      throw new Error(result.error?.message || 'Error al guardar recursos');
     }
   };
 

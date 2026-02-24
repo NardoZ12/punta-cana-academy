@@ -54,9 +54,7 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-[#30363d]">
           <Link href="/dashboard/teacher" className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-cyan-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">PCA</span>
-            </div>
+            <img src="/images/logos/favicon-definitivo.png" alt="PCA" className="w-8 h-8 rounded-lg object-contain" />
             <span className="text-lg font-bold">Punta Cana Academy</span>
           </Link>
 

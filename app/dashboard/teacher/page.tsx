@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { 
   Users, 
   BookOpen, 
@@ -97,6 +98,7 @@ const QUESTION_TYPES = [
 ];
 
 export default function TeacherDashboard() {
+  const { user, profile, loading: authLoading } = useAuthContext();
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
@@ -153,48 +155,31 @@ export default function TeacherDashboard() {
   ]);
 
   useEffect(() => {
+    // Wait for AuthContext to finish loading
+    if (authLoading) return;
+    
+    if (!user || !profile) {
+      setLoading(false);
+      return;
+    }
+
+    if (profile.user_type !== 'teacher') {
+      setError('No tienes permisos de profesor');
+      setLoading(false);
+      return;
+    }
+
+    setTeacherName(profile.full_name || 'Profesor');
+
     let mounted = true;
     const supabase = createClient();
 
     async function loadTeacherData() {
       try {
-        // Use getSession first (reads from cookie, fast) then validate with getUser
-        const { data: { session } } = await supabase.auth.getSession();
-        let user = session?.user ?? null;
-        
-        if (!user) {
-          // Fallback: try getUser (network call) in case cookie is stale
-          const { data } = await supabase.auth.getUser();
-          user = data.user;
-        }
-
-        if (!user) { 
-          window.location.href = '/login';
-          return; 
-        }
-
-        if (!mounted) return;
-
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, user_type')
-          .eq('id', user.id)
-          .single();
-        
-        if (!mounted) return;
-
-        if (profile?.user_type !== 'teacher') {
-          setError('No tienes permisos de profesor');
-          setLoading(false);
-          return;
-        }
-
-        setTeacherName(profile.full_name || 'Profesor');
-
         const { data: coursesData } = await supabase
           .from('courses')
           .select('id, title, description, image_url, created_at')
-          .eq('instructor_id', user.id)
+          .eq('instructor_id', user!.id)
           .order('created_at', { ascending: false });
 
         if (!mounted) return;
@@ -241,7 +226,7 @@ export default function TeacherDashboard() {
     
     loadTeacherData();
     return () => { mounted = false; };
-  }, []);
+  }, [authLoading, user, profile]);
 
   useEffect(() => {
     if (!selectedCourseId) return;

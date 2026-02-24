@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
 import {
   Home,
   BookOpen,
@@ -24,32 +24,12 @@ interface TeacherLayoutProps {
 
 export default function TeacherLayout({ children }: TeacherLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const { user, profile, signOut } = useAuthContext();
   const pathname = usePathname();
-  const supabase = createClient();
-
-  useEffect(() => {
-    async function getUser() {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUser = session?.user ?? null;
-
-      if (currentUser) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, user_type')
-          .eq('id', currentUser.id)
-          .single();
-
-        setUser({ ...currentUser, profile });
-      }
-    }
-    getUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await signOut();
     } catch (e) {
       console.error('Error signing out:', e);
     } finally {
@@ -120,14 +100,14 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
           <div className="flex items-center space-x-3 p-3 rounded-lg bg-[#21262d]">
             <div className="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center">
               <span className="text-white font-bold text-sm">
-                {user?.profile?.full_name?.charAt(0)?.toUpperCase() ||
+                {profile?.full_name?.charAt(0)?.toUpperCase() ||
                   user?.email?.charAt(0)?.toUpperCase() ||
                   'P'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-white truncate">
-                {user?.profile?.full_name || 'Profesor'}
+                {profile?.full_name || 'Profesor'}
               </div>
               <div className="text-xs text-gray-400">Profesor</div>
             </div>
@@ -181,14 +161,14 @@ export default function TeacherLayout({ children }: TeacherLayoutProps) {
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center">
                 <span className="text-white font-bold text-sm">
-                  {user?.profile?.full_name?.charAt(0)?.toUpperCase() ||
+                  {profile?.full_name?.charAt(0)?.toUpperCase() ||
                     user?.email?.charAt(0)?.toUpperCase() ||
                     'P'}
                 </span>
               </div>
               <div className="hidden md:block">
                 <div className="text-sm font-medium">
-                  {user?.profile?.full_name || 'Profesor'}
+                  {profile?.full_name || 'Profesor'}
                 </div>
               </div>
             </div>

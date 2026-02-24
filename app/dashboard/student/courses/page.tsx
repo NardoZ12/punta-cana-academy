@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/atoms/Button';
 import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { 
   BookOpen, 
   Search, 
@@ -54,17 +55,16 @@ export default function StudentCoursesPage() {
   const [courseToDelete, setCourseToDelete] = useState<string | null>(null);
 
   const supabase = createClient();
+  const { user, loading: authLoading } = useAuthContext();
 
   useEffect(() => {
+    if (authLoading || !user) return;
     loadCoursesData();
-  }, []);
+  }, [authLoading, user]);
 
   const loadCoursesData = async () => {
+    if (!user) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
-
       // Cargar cursos inscritos
       const { data: enrolled, error: enrolledError } = await supabase
         .from('enrollments')
@@ -135,8 +135,6 @@ export default function StudentCoursesPage() {
 
   const enrollInCourse = async (courseId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
       if (!user) return;
 
       const { error } = await supabase

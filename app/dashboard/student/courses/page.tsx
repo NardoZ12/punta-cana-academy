@@ -61,7 +61,8 @@ export default function StudentCoursesPage() {
 
   const loadCoursesData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       // Cargar cursos inscritos
@@ -113,7 +114,8 @@ export default function StudentCoursesPage() {
 
   const enrollInCourse = async (courseId: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { error } = await supabase

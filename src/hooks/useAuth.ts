@@ -22,29 +22,40 @@ export function useAuth() {
   })
   
   const router = useRouter()
+  // createClient() is now a singleton — same instance every call
   const supabase = createClient()
 
   useEffect(() => {
+    let mounted = true
+
     // Obtener sesión inicial
     const getInitialSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
-      
-      if (error) {
-        console.error('Error obteniendo sesión:', error)
-        setState(prev => ({ ...prev, loading: false }))
-        return
-      }
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (!mounted) return
 
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        setState({
-          user: session.user,
-          profile,
-          session,
-          loading: false,
-        })
-      } else {
-        setState(prev => ({ ...prev, loading: false }))
+        if (error) {
+          console.error('Error obteniendo sesión:', error)
+          setState(prev => ({ ...prev, loading: false }))
+          return
+        }
+
+        if (session?.user) {
+          const profile = await fetchProfile(session.user.id)
+          if (!mounted) return
+          setState({
+            user: session.user,
+            profile,
+            session,
+            loading: false,
+          })
+        } else {
+          setState(prev => ({ ...prev, loading: false }))
+        }
+      } catch (err) {
+        console.error('Error en getInitialSession:', err)
+        if (mounted) setState(prev => ({ ...prev, loading: false }))
       }
     }
 
@@ -53,16 +64,24 @@ export function useAuth() {
     // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('🔐 Auth state change:', event, session?.user?.email)
+        if (!mounted) return
         
         if (event === 'SIGNED_IN' && session?.user) {
           const profile = await fetchProfile(session.user.id)
+          if (!mounted) return
           setState({
             user: session.user,
             profile,
             session,
             loading: false,
           })
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Session refreshed — update session but keep existing profile
+          setState(prev => ({
+            ...prev,
+            user: session.user,
+            session,
+          }))
         } else if (event === 'SIGNED_OUT') {
           setState({
             user: null,
@@ -76,15 +95,15 @@ export function useAuth() {
     )
 
     return () => {
+      mounted = false
       subscription.unsubscribe()
     }
-  }, [router, supabase])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Obtener perfil del usuario
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
-      console.log('🔍 Obteniendo perfil para usuario:', userId);
-      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -92,11 +111,8 @@ export function useAuth() {
         .single()
 
       if (error) {
-        console.error('❌ Error obteniendo perfil:', error)
-        
         // Si el perfil no existe, intentar crearlo
         if (error.code === 'PGRST116') {
-          console.log('🔧 Perfil no existe, intentando crear...');
           const user = await supabase.auth.getUser();
           if (user.data.user) {
             return await createProfile(user.data.user);
@@ -105,7 +121,6 @@ export function useAuth() {
         return null
       }
 
-      console.log('✅ Perfil obtenido:', data);
       return data as Profile
     } catch (error) {
       console.error('💥 Error fetchProfile:', error)
@@ -125,8 +140,6 @@ export function useAuth() {
         ...userData,
       }
 
-      console.log('🔧 Creando perfil con datos:', profileData)
-
       // Usar upsert para evitar error de clave duplicada (el trigger puede haberlo creado ya)
       const { data, error } = await supabase
         .from('profiles')
@@ -134,15 +147,11 @@ export function useAuth() {
         .select()
         .single()
 
-      if (error) {
-        console.error('❌ Error creando perfil:', error)
-        throw error
-      }
+      if (error) throw error
 
-      console.log('✅ Perfil creado exitosamente:', data)
       return data as Profile
     } catch (error) {
-      console.error('❌ Error createProfile:', error)
+      console.error('Error createProfile:', error)
       throw error
     }
   }

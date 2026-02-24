@@ -62,6 +62,22 @@ CREATE TABLE IF NOT EXISTS course_modules (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Agregar sort_order a course_modules si ya existía sin esa columna
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'course_modules' AND column_name = 'sort_order') THEN
+        ALTER TABLE course_modules ADD COLUMN sort_order INTEGER DEFAULT 0;
+        RAISE NOTICE '✅ Columna sort_order agregada a course_modules';
+    END IF;
+END $$;
+
+-- Agregar is_published a course_modules si ya existía sin esa columna
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'course_modules' AND column_name = 'is_published') THEN
+        ALTER TABLE course_modules ADD COLUMN is_published BOOLEAN DEFAULT true;
+        RAISE NOTICE '✅ Columna is_published agregada a course_modules';
+    END IF;
+END $$;
+
 -- Agregar sort_order a course_lessons si no existe
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'course_lessons' AND column_name = 'sort_order') THEN

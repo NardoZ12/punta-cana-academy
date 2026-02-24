@@ -158,7 +158,16 @@ export default function TeacherDashboard() {
 
     async function loadTeacherData() {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        // Use getSession first (reads from cookie, fast) then validate with getUser
+        const { data: { session } } = await supabase.auth.getSession();
+        let user = session?.user ?? null;
+        
+        if (!user) {
+          // Fallback: try getUser (network call) in case cookie is stale
+          const { data } = await supabase.auth.getUser();
+          user = data.user;
+        }
+
         if (!user) { 
           window.location.href = '/login';
           return; 

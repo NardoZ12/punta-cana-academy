@@ -4,24 +4,25 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { 
-  Home, 
-  BookOpen, 
-  Calendar, 
-  CheckSquare, 
-  Settings, 
-  Search, 
-  Bell, 
-  Menu, 
+import {
+  Home,
+  BookOpen,
+  PlusCircle,
+  Users,
+  Settings,
+  Search,
+  Bell,
+  Menu,
   X,
-  User 
+  LogOut,
+  BarChart3
 } from 'lucide-react';
 
-interface StudentLayoutProps {
+interface TeacherLayoutProps {
   children: React.ReactNode;
 }
 
-export default function StudentLayout({ children }: StudentLayoutProps) {
+export default function TeacherLayout({ children }: TeacherLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const pathname = usePathname();
@@ -29,21 +30,21 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
 
   useEffect(() => {
     async function getUser() {
-      // Use getSession first (reads from cookie, instant) 
       const { data: { session } } = await supabase.auth.getSession();
       const currentUser = session?.user ?? null;
-      
+
       if (currentUser) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('full_name, user_type')
           .eq('id', currentUser.id)
           .single();
-        
+
         setUser({ ...currentUser, profile });
       }
     }
     getUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogout = async () => {
@@ -52,35 +53,33 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
     } catch (e) {
       console.error('Error signing out:', e);
     } finally {
-      // Force full page navigation to clear all client state
       window.location.href = '/login';
     }
   };
 
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard/student', icon: Home },
-    { name: 'Mis Cursos', href: '/dashboard/student/courses', icon: BookOpen },
-    { name: 'Tareas', href: '/dashboard/student/tasks', icon: CheckSquare },
-    { name: 'Configuración', href: '/dashboard/student/settings', icon: Settings },
+    { name: 'Dashboard', href: '/dashboard/teacher', icon: Home },
+    { name: 'Mis Cursos', href: '/dashboard/teacher/manage-courses', icon: BookOpen },
+    { name: 'Crear Curso', href: '/dashboard/teacher/create-course', icon: PlusCircle },
   ];
 
   return (
     <div className="min-h-screen bg-[#0f1115] text-white flex">
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#161b22] border-r border-[#30363d] transform ${
-        isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 lg:flex lg:flex-col`}>
-        
+      <div
+        className={`fixed inset-y-0 left-0 z-50 w-72 bg-[#161b22] border-r border-[#30363d] transform ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 lg:flex lg:flex-col`}
+      >
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-[#30363d]">
-          <Link href="/dashboard/student" className="flex items-center space-x-3">
+          <Link href="/dashboard/teacher" className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-cyan-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-sm">PCA</span>
             </div>
             <span className="text-lg font-bold">Punta Cana Academy</span>
           </Link>
-          
-          {/* Close button for mobile */}
+
           <button
             onClick={() => setIsSidebarOpen(false)}
             className="lg:hidden p-2 rounded-md hover:bg-gray-700"
@@ -92,10 +91,12 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
         {/* Navigation */}
         <nav className="flex-1 mt-8 px-4 space-y-2">
           {navigation.map((item) => {
-            const isActive = pathname === item.href || 
-              (item.href === '/dashboard/student/courses' && pathname.startsWith('/dashboard/student/course/'));
+            const isActive =
+              pathname === item.href ||
+              (item.href === '/dashboard/teacher/manage-courses' &&
+                pathname.startsWith('/dashboard/teacher/course/'));
             const Icon = item.icon;
-            
+
             return (
               <Link
                 key={item.name}
@@ -114,28 +115,28 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
           })}
         </nav>
 
-        {/* User Profile */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[#30363d]">
+        {/* User Profile + Logout */}
+        <div className="p-4 border-t border-[#30363d]">
           <div className="flex items-center space-x-3 p-3 rounded-lg bg-[#21262d]">
             <div className="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center">
               <span className="text-white font-bold text-sm">
-                {user?.profile?.full_name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                {user?.profile?.full_name?.charAt(0)?.toUpperCase() ||
+                  user?.email?.charAt(0)?.toUpperCase() ||
+                  'P'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-white truncate">
-                {user?.profile?.full_name || 'Usuario'}
+                {user?.profile?.full_name || 'Profesor'}
               </div>
-              <div className="text-xs text-gray-400">Estudiante</div>
+              <div className="text-xs text-gray-400">Profesor</div>
             </div>
             <button
               onClick={handleLogout}
-              className="p-2 text-gray-400 hover:text-white rounded-md hover:bg-gray-700"
+              className="p-2 text-gray-400 hover:text-red-400 rounded-md hover:bg-gray-700 transition-colors"
               title="Cerrar Sesión"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -145,7 +146,6 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       <div className="flex-1 flex flex-col min-h-screen">
         {/* Header */}
         <header className="bg-[#161b22] border-b border-[#30363d] h-16 flex items-center justify-between px-6 sticky top-0 z-40">
-          {/* Mobile menu button */}
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="lg:hidden p-2 rounded-md hover:bg-gray-700"
@@ -161,7 +161,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
               </div>
               <input
                 type="text"
-                placeholder="Buscar cursos, lecciones..."
+                placeholder="Buscar cursos, estudiantes..."
                 className="block w-full pl-10 pr-3 py-2 border border-[#30363d] rounded-md leading-5 bg-[#0d1117] text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500"
               />
             </div>
@@ -169,27 +169,26 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
 
           {/* Right side */}
           <div className="flex items-center space-x-4">
-            {/* Search icon for mobile */}
             <button className="sm:hidden p-2 text-gray-400 hover:text-white rounded-md hover:bg-gray-700">
               <Search className="w-5 h-5" />
             </button>
 
-            {/* Notifications */}
             <button className="relative p-2 text-gray-400 hover:text-white rounded-md hover:bg-gray-700">
               <Bell className="w-5 h-5" />
               <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-400 ring-2 ring-[#161b22]"></span>
             </button>
 
-            {/* User Avatar */}
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center">
                 <span className="text-white font-bold text-sm">
-                  {user?.profile?.full_name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                  {user?.profile?.full_name?.charAt(0)?.toUpperCase() ||
+                    user?.email?.charAt(0)?.toUpperCase() ||
+                    'P'}
                 </span>
               </div>
               <div className="hidden md:block">
                 <div className="text-sm font-medium">
-                  {user?.profile?.full_name || 'Usuario'}
+                  {user?.profile?.full_name || 'Profesor'}
                 </div>
               </div>
             </div>
@@ -197,9 +196,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 bg-[#0f1115] p-6">
-          {children}
-        </main>
+        <main className="flex-1 bg-[#0f1115] p-6">{children}</main>
       </div>
 
       {/* Overlay for mobile sidebar */}

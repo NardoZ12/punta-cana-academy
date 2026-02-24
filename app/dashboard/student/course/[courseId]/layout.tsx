@@ -27,7 +27,8 @@ export default function CourseLayout({
       setCourseId(courseIdValue);
 
       // Obtener curso y datos del usuario
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       
       const { data: courseData } = await supabase
         .from('courses')
@@ -70,7 +71,8 @@ export default function CourseLayout({
   useEffect(() => {
     // Función para recargar datos de progreso
     const reloadProgress = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       
       if (user && courseId) {
         const { data: completedLessons } = await supabase

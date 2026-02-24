@@ -66,32 +66,33 @@ export default function StudentCoursesPage() {
       if (!user) return;
 
       // Cargar cursos inscritos
-      const { data: enrolled } = await supabase
+      const { data: enrolled, error: enrolledError } = await supabase
         .from('enrollments')
         .select(`
           id, progress, grade, enrolled_at,
           courses (
             id, title, description, image_url, price, level, modality, 
-            instructor_id, is_published, created_at,
-            profiles:instructor_id (full_name)
+            instructor_id, is_published, created_at
           )
         `)
-        .eq('student_id', user.id)
-        .eq('courses.is_published', true);
+        .eq('student_id', user.id);
+
+      if (enrolledError) {
+        console.error('Error loading enrolled courses:', enrolledError);
+      }
 
       if (enrolled) {
         setEnrolledCourses(enrolled);
       }
 
       // Cargar cursos disponibles (no inscritos)
-      const enrolledCourseIds = enrolled?.map(e => e.courses.id) || [];
+      const enrolledCourseIds = enrolled?.map(e => e.courses?.id).filter(Boolean) || [];
       
       let availableQuery = supabase
         .from('courses')
         .select(`
           id, title, description, image_url, price, level, modality,
-          instructor_id, is_published, created_at,
-          profiles:instructor_id (full_name)
+          instructor_id, is_published, created_at
         `)
         .eq('is_published', true);
 
@@ -99,10 +100,30 @@ export default function StudentCoursesPage() {
         availableQuery = availableQuery.not('id', 'in', `(${enrolledCourseIds.join(',')})`);
       }
 
-      const { data: available } = await availableQuery;
+      const { data: available, error: availableError } = await availableQuery;
+
+      if (availableError) {
+        console.error('Error loading available courses:', availableError);
+      }
 
       if (available) {
-        setAvailableCourses(available);
+        // Fetch instructor names separately
+        const instructorIds = [...new Set(available.map(c => c.instructor_id).filter(Boolean))];
+        if (instructorIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', instructorIds);
+          
+          const profileMap = new Map(profiles?.map(p => [p.id, p.full_name]) || []);
+          const coursesWithInstructor = available.map(c => ({
+            ...c,
+            profiles: c.instructor_id ? { full_name: profileMap.get(c.instructor_id) || null } : null
+          }));
+          setAvailableCourses(coursesWithInstructor);
+        } else {
+          setAvailableCourses(available);
+        }
       }
 
     } catch (error) {

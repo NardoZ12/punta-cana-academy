@@ -366,14 +366,23 @@ export default function EditCoursePage() {
 
   // Helper: get auth headers for direct fetch
   const getSupabaseHeaders = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
+    // Try getSession first, if no token try refreshing
+    let session = (await supabase.auth.getSession()).data?.session;
+    if (!session?.access_token) {
+      console.warn('[getSupabaseHeaders] No session, attempting refresh...');
+      const { data } = await supabase.auth.refreshSession();
+      session = data?.session || null;
+    }
     const token = session?.access_token;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     
-    console.log('[getSupabaseHeaders] token:', token ? 'YES' : 'NO', 'url:', url ? 'YES' : 'NO', 'key:', key ? 'YES' : 'NO');
+    console.log('[getSupabaseHeaders] token:', token ? token.substring(0, 20) + '...' : 'NULL', 'url:', url ? 'YES' : 'NO', 'key:', key ? 'YES' : 'NO');
     
-    if (!token) throw new Error('No hay sesión activa. Por favor inicia sesión de nuevo.');
+    if (!token) {
+      alert('❌ Tu sesión ha expirado. Por favor recarga la página e inicia sesión de nuevo.');
+      throw new Error('No hay sesión activa. Por favor inicia sesión de nuevo.');
+    }
     if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL no está configurada');
     if (!key) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY no está configurada');
     
@@ -431,6 +440,7 @@ export default function EditCoursePage() {
   };
 
   const handleUpdateUnit = async (unit: CourseUnit) => {
+    console.log('[UpdateUnit] Updating:', unit.id, unit.title);
     try {
       const { url, headers } = await getSupabaseHeaders();
       const ctrl = new AbortController();
@@ -443,9 +453,12 @@ export default function EditCoursePage() {
         })
       });
       clearTimeout(t);
+      console.log('[UpdateUnit] Response:', res.status);
       if (res.ok) { setUnits(units.map(u => u.id === unit.id ? unit : u)); setEditingUnit(null); }
+      else { const body = await res.text(); alert('Error al actualizar unidad: ' + body); }
     } catch (err: any) {
-      console.error('Error updating unit:', err);
+      console.error('[UpdateUnit] Error:', err);
+      alert('Error al actualizar: ' + err.message);
     }
   };
 
@@ -492,32 +505,58 @@ export default function EditCoursePage() {
   const handleAddTopic = async (unitId: string) => {
     if (!newTopicTitle.trim()) return;
     const unit = units.find(u => u.id === unitId);
+    console.log('[AddTopic] Creating topic:', newTopicTitle, 'in unit:', unitId);
     try {
       const { url, headers } = await getSupabaseHeaders();
+      
+      // Get safe order_index from DB to avoid unique constraint violation
+      let safeOrderIndex = unit?.topics?.length || 0;
+      try {
+        const ctrlMax = new AbortController();
+        const tMax = setTimeout(() => ctrlMax.abort(), 10000);
+        const maxRes = await fetch(
+          `${url}/rest/v1/unit_topics?unit_id=eq.${unitId}&select=order_index&order=order_index.desc&limit=1`,
+          { headers: { ...headers, 'Prefer': '' }, signal: ctrlMax.signal }
+        );
+        clearTimeout(tMax);
+        const maxData = await maxRes.json();
+        if (Array.isArray(maxData) && maxData.length > 0) {
+          safeOrderIndex = (maxData[0].order_index ?? 0) + 1;
+        }
+      } catch (e) { console.warn('[AddTopic] Could not get max order_index:', e); }
+      
+      console.log('[AddTopic] Using order_index:', safeOrderIndex);
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/unit_topics`, {
         method: 'POST', headers, signal: ctrl.signal,
         body: JSON.stringify({
           unit_id: unitId, course_id: courseId, title: newTopicTitle,
-          order_index: unit?.topics?.length || 0, is_published: true
+          order_index: safeOrderIndex, is_published: true
         })
       });
       clearTimeout(t);
       const data = await res.json();
+      console.log('[AddTopic] Response:', res.status, data);
       if (res.ok && data?.[0]) {
         setUnits(units.map(u => u.id === unitId ? { ...u, topics: [...(u.topics || []), { ...data[0], resources: null }] } : u));
         setNewTopicTitle(''); setAddingTopicToUnit(null);
       } else {
-        console.error('Error creating topic:', data);
+        if (JSON.stringify(data).includes('unique') || JSON.stringify(data).includes('duplicate')) {
+          alert('El tema ya existía. Recargando datos...');
+          await fetchCourseData();
+        } else {
+          alert('Error al crear tema: ' + (data?.message || JSON.stringify(data)));
+        }
       }
     } catch (err: any) {
-      console.error('Error creating topic:', err);
+      console.error('[AddTopic] Error:', err);
       alert('Error al crear tema: ' + err.message);
     }
   };
 
   const handleUpdateTopic = async (topic: UnitTopic) => {
+    console.log('[UpdateTopic] Updating:', topic.id, topic.title);
     try {
       const { url, headers } = await getSupabaseHeaders();
       const ctrl = new AbortController();
@@ -529,12 +568,17 @@ export default function EditCoursePage() {
         })
       });
       clearTimeout(t);
+      console.log('[UpdateTopic] Response:', res.status);
       if (res.ok) {
         setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
         setEditingTopic(null);
+      } else {
+        const body = await res.text();
+        alert('Error al actualizar tema: ' + body);
       }
     } catch (err: any) {
-      console.error('Error updating topic:', err);
+      console.error('[UpdateTopic] Error:', err);
+      alert('Error al actualizar: ' + err.message);
     }
   };
 

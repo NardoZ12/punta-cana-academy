@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/atoms/Button';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -31,8 +32,8 @@ interface Course {
   is_published: boolean;
   created_at: string;
   profiles?: {
-    full_name: string;
-  };
+    full_name: string | null;
+  } | null;
 }
 
 interface Enrollment {
@@ -44,9 +45,6 @@ interface Enrollment {
 }
 
 export default function StudentCoursesPage() {
-  const [enrolledCourses, setEnrolledCourses] = useState<Enrollment[]>([]);
-  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'enrolled' | 'available'>('enrolled');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLevel, setFilterLevel] = useState('all');
@@ -55,88 +53,83 @@ export default function StudentCoursesPage() {
   const [courseToDelete, setCourseToDelete] = useState<string | null>(null);
 
   const supabase = createClient();
+  const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuthContext();
 
-  useEffect(() => {
-    if (authLoading || !user) return;
-    loadCoursesData();
-  }, [authLoading, user]);
+  // ── React Query: fetch enrolled + available courses in parallel ──
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['student-courses', user?.id],
+    queryFn: async () => {
+      if (!user) throw new Error('No user');
 
-  const loadCoursesData = async () => {
-    if (!user) return;
-    try {
-      // Cargar cursos inscritos
-      const { data: enrolled, error: enrolledError } = await supabase
+      // Run enrolled + all published courses queries in PARALLEL
+      const enrolledPromise = supabase
         .from('enrollments')
         .select(`
-          id, progress, grade, enrolled_at,
-          courses (
-            id, title, description, image_url, price, level, modality, 
-            instructor_id, is_published, created_at
-          )
-        `)
+            id, progress, grade, enrolled_at,
+            courses (
+              id, title, description, image_url, price, level, modality, 
+              instructor_id, is_published, created_at
+            )
+          `)
         .eq('student_id', user.id);
 
-      if (enrolledError) {
-        console.error('Error loading enrolled courses:', enrolledError);
-      }
-
-      if (enrolled) {
-        setEnrolledCourses(enrolled);
-      }
-
-      // Cargar cursos disponibles (no inscritos)
-      const enrolledCourseIds = enrolled?.map(e => e.courses?.id).filter(Boolean) || [];
-      
-      let availableQuery = supabase
+      const publishedPromise = supabase
         .from('courses')
         .select(`
-          id, title, description, image_url, price, level, modality,
-          instructor_id, is_published, created_at
-        `)
+            id, title, description, image_url, price, level, modality,
+            instructor_id, is_published, created_at
+          `)
         .eq('is_published', true);
 
-      if (enrolledCourseIds.length > 0) {
-        availableQuery = availableQuery.not('id', 'in', `(${enrolledCourseIds.join(',')})`);
+      const [enrolledResult, publishedResult] = await Promise.all([
+        enrolledPromise,
+        publishedPromise,
+      ]);
+
+      if (enrolledResult.error) console.error('Error enrolled:', enrolledResult.error);
+      if (publishedResult.error) console.error('Error published:', publishedResult.error);
+
+      const enrolled = (enrolledResult.data || []) as unknown as Enrollment[];
+      const allPublished = (publishedResult.data || []) as unknown as Course[];
+
+      // Filter out already-enrolled courses client-side
+      const enrolledIds = new Set(enrolled.map(e => e.courses?.id).filter(Boolean));
+      const available = allPublished.filter(c => !enrolledIds.has(c.id));
+
+      // Fetch instructor profiles for available courses
+      const instructorIds = [...new Set(available.map(c => c.instructor_id).filter(Boolean))];
+      let availableWithProfiles: Course[] = available;
+
+      if (instructorIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', instructorIds);
+
+        const profileMap = new Map<string, string>(
+          (profiles || []).map((p: Record<string, string>) => [p.id, p.full_name])
+        );
+        availableWithProfiles = available.map(c => ({
+          ...c,
+          profiles: c.instructor_id
+            ? { full_name: profileMap.get(c.instructor_id) || null }
+            : null,
+        }));
       }
 
-      const { data: available, error: availableError } = await availableQuery;
+      return { enrolled, available: availableWithProfiles };
+    },
+    enabled: !authLoading && !!user,
+  });
 
-      if (availableError) {
-        console.error('Error loading available courses:', availableError);
-      }
+  const enrolledCourses = data?.enrolled ?? [];
+  const availableCourses = data?.available ?? [];
 
-      if (available) {
-        // Fetch instructor names separately
-        const instructorIds = [...new Set(available.map(c => c.instructor_id).filter(Boolean))];
-        if (instructorIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, full_name')
-            .in('id', instructorIds);
-          
-          const profileMap = new Map(profiles?.map(p => [p.id, p.full_name]) || []);
-          const coursesWithInstructor = available.map(c => ({
-            ...c,
-            profiles: c.instructor_id ? { full_name: profileMap.get(c.instructor_id) || null } : null
-          }));
-          setAvailableCourses(coursesWithInstructor);
-        } else {
-          setAvailableCourses(available);
-        }
-      }
-
-    } catch (error) {
-      console.error('Error loading courses:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const enrollInCourse = async (courseId: string) => {
-    try {
-      if (!user) return;
-
+  // ── Mutations with automatic cache invalidation ──
+  const enrollMutation = useMutation({
+    mutationFn: async (courseId: string) => {
+      if (!user) throw new Error('No user');
       const { error } = await supabase
         .from('enrollments')
         .insert({
@@ -144,34 +137,33 @@ export default function StudentCoursesPage() {
           course_id: courseId,
           progress: 0,
           grade: null,
-          enrolled_at: new Date().toISOString()
+          enrolled_at: new Date().toISOString(),
         });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student-courses', user?.id] });
+      setActiveTab('enrolled');
+    },
+  });
 
-      if (!error) {
-        await loadCoursesData(); // Recargar datos
-        setActiveTab('enrolled'); // Cambiar a pestaña de inscritos
-      }
-    } catch (error) {
-      console.error('Error enrolling in course:', error);
-    }
-  };
-
-  const unenrollFromCourse = async (enrollmentId: string) => {
-    try {
+  const unenrollMutation = useMutation({
+    mutationFn: async (enrollmentId: string) => {
       const { error } = await supabase
         .from('enrollments')
         .delete()
         .eq('id', enrollmentId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student-courses', user?.id] });
+      setShowDeleteModal(false);
+      setCourseToDelete(null);
+    },
+  });
 
-      if (!error) {
-        await loadCoursesData();
-        setShowDeleteModal(false);
-        setCourseToDelete(null);
-      }
-    } catch (error) {
-      console.error('Error unenrolling from course:', error);
-    }
-  };
+  const enrollInCourse = (courseId: string) => enrollMutation.mutate(courseId);
+  const unenrollFromCourse = (enrollmentId: string) => unenrollMutation.mutate(enrollmentId);
 
   const filteredAvailableCourses = availableCourses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||

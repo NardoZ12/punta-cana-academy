@@ -389,14 +389,33 @@ export default function EditCoursePage() {
     if (!newUnitTitle.trim()) return;
     try {
       const { url, headers } = await getSupabaseHeaders();
+      
+      // Get safe order_index: query max from DB to avoid duplicate key
+      const ctrlMax = new AbortController();
+      const tMax = setTimeout(() => ctrlMax.abort(), 10000);
+      let safeOrderIndex = units.length;
+      try {
+        const maxRes = await fetch(
+          `${url}/rest/v1/course_units?course_id=eq.${courseId}&select=order_index&order=order_index.desc&limit=1`,
+          { headers: { ...headers, 'Prefer': '' }, signal: ctrlMax.signal }
+        );
+        clearTimeout(tMax);
+        const maxData = await maxRes.json();
+        if (Array.isArray(maxData) && maxData.length > 0) {
+          safeOrderIndex = (maxData[0].order_index ?? 0) + 1;
+        }
+      } catch { clearTimeout(tMax); }
+      
+      console.log('[AddUnit] Creating unit with order_index:', safeOrderIndex);
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/course_units`, {
         method: 'POST', headers, signal: ctrl.signal,
-        body: JSON.stringify({ course_id: courseId, title: newUnitTitle, order_index: units.length, is_published: true })
+        body: JSON.stringify({ course_id: courseId, title: newUnitTitle, order_index: safeOrderIndex, is_published: true })
       });
       clearTimeout(t);
       const data = await res.json();
+      console.log('[AddUnit] Response:', res.status, data);
       if (res.ok && data?.[0]) {
         setUnits([...units, { ...data[0], topics: [] }]);
         setNewUnitTitle('');
@@ -583,13 +602,29 @@ export default function EditCoursePage() {
       const { url, headers } = await getSupabaseHeaders();
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
+      // Get safe order_index from DB
+      let safeOrderIndex = unit.topics?.length || 0;
+      try {
+        const ctrlMax = new AbortController();
+        const tMax = setTimeout(() => ctrlMax.abort(), 10000);
+        const maxRes = await fetch(
+          `${url}/rest/v1/unit_topics?unit_id=eq.${newTopicData.unitId}&select=order_index&order=order_index.desc&limit=1`,
+          { headers: { ...headers, 'Prefer': '' }, signal: ctrlMax.signal }
+        );
+        clearTimeout(tMax);
+        const maxData = await maxRes.json();
+        if (Array.isArray(maxData) && maxData.length > 0) {
+          safeOrderIndex = (maxData[0].order_index ?? 0) + 1;
+        }
+      } catch {}
+      
       const res = await fetch(`${url}/rest/v1/unit_topics`, {
         method: 'POST', headers, signal: ctrl.signal,
         body: JSON.stringify({
           unit_id: newTopicData.unitId,
           course_id: courseId,
           title: newTopicData.title,
-          order_index: unit.topics?.length || 0,
+          order_index: safeOrderIndex,
           is_published: newTopicData.is_published ?? true,
           estimated_minutes: newTopicData.estimated_minutes
         })

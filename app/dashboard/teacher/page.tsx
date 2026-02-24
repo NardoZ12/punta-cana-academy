@@ -209,29 +209,51 @@ export default function TeacherDashboard() {
           
           const courseIds = coursesData.map((c: any) => c.id);
           
-          // Use supabase client for enrollments/assignments (they don't hang)
-          const { count: studentCount } = await supabase
-            .from('enrollments')
-            .select('*', { count: 'exact', head: true })
-            .in('course_id', courseIds);
+          // Fetch enrollments count via direct REST
+          let studentCount = 0;
+          try {
+            const idsParam = courseIds.map((id: string) => `"${id}"`).join(',');
+            const ctrl2 = new AbortController();
+            const t2 = setTimeout(() => ctrl2.abort(), 15000);
+            const enrollRes = await fetch(
+              `${supabaseUrl}/rest/v1/enrollments?course_id=in.(${idsParam})&select=id`,
+              { headers: { ...headers, 'Prefer': 'count=exact' }, signal: ctrl2.signal }
+            );
+            clearTimeout(t2);
+            const countHeader = enrollRes.headers.get('content-range');
+            if (countHeader) {
+              const total = countHeader.split('/')[1];
+              studentCount = total === '*' ? 0 : parseInt(total, 10) || 0;
+            } else {
+              const enrollData = await enrollRes.json();
+              studentCount = Array.isArray(enrollData) ? enrollData.length : 0;
+            }
+          } catch (err) { console.error('[TeacherDashboard] Enrollment count error:', err); }
 
-          const { data: assignments } = await supabase
-            .from('assignments')
-            .select('id, title, due_date, course_id')
-            .in('course_id', courseIds)
-            .gte('due_date', new Date().toISOString())
-            .order('due_date', { ascending: true })
-            .limit(10);
+          // Fetch pending assignments via direct REST
+          let assignments: any[] = [];
+          try {
+            const idsParam = courseIds.map((id: string) => `"${id}"`).join(',');
+            const ctrl3 = new AbortController();
+            const t3 = setTimeout(() => ctrl3.abort(), 15000);
+            const assignRes = await fetch(
+              `${supabaseUrl}/rest/v1/assignments?course_id=in.(${idsParam})&due_date=gte.${new Date().toISOString()}&select=id,title,due_date,course_id&order=due_date.asc&limit=10`,
+              { headers, signal: ctrl3.signal }
+            );
+            clearTimeout(t3);
+            assignments = await assignRes.json();
+            if (!Array.isArray(assignments)) assignments = [];
+          } catch (err) { console.error('[TeacherDashboard] Assignments fetch error:', err); }
 
           if (!mounted) return;
 
-          setPendingAssignments(assignments || []);
+          setPendingAssignments(assignments);
 
           setStats(prev => ({
             ...prev,
-            totalStudents: studentCount || 0,
+            totalStudents: studentCount,
             totalCourses: coursesData.length,
-            pendingAssignments: assignments?.length || 0
+            pendingAssignments: assignments.length
           }));
         } else {
           console.log('[TeacherDashboard] No courses found or error:', coursesData);
@@ -418,7 +440,19 @@ export default function TeacherDashboard() {
     if (!selectAllStudents && selectedStudentIds.size === 0) return alert('Seleccione al menos un estudiante');
     
     setSubmitting(true);
+    
+    // Use direct fetch instead of supabase.from() to avoid hanging
     const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const fetchHeaders = {
+      'Content-Type': 'application/json',
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${token}`,
+      'Prefer': 'return=representation'
+    };
     
     // Si es para todos o múltiples estudiantes, crear una tarea con target_type
     const payload: any = {
@@ -437,24 +471,38 @@ export default function TeacherDashboard() {
       is_published: true
     };
 
-    const { error } = await supabase.from('assignments').insert(payload);
-
-    setSubmitting(false);
-    if (error) alert(error.message);
-    else {
-      const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
-      alert(`✓ Tarea asignada a ${studentCount} estudiante(s)`);
-      setIsTaskModalOpen(false);
-      setTaskData({ 
-        title: '', description: '', date: '', assignment_type: 'file_upload',
-        max_points: 100, max_file_size_mb: 10, allowed_file_types: ['pdf', 'doc'],
-        rubric: '', attached_links: [], newLink: ''
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/assignments`, {
+        method: 'POST', headers: fetchHeaders, signal: ctrl.signal,
+        body: JSON.stringify(payload)
       });
-      setTaskCourseId('');
-      setSelectAllStudents(true);
-      setSelectedStudentIds(new Set());
-      setCourseStudents([]);
-      window.location.reload();
+      clearTimeout(timeout);
+      
+      setSubmitting(false);
+      if (!res.ok) {
+        const body = await res.text();
+        alert('Error: ' + body);
+      } else {
+        const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
+        alert(`✓ Tarea asignada a ${studentCount} estudiante(s)`);
+        setIsTaskModalOpen(false);
+        setTaskData({ 
+          title: '', description: '', date: '', assignment_type: 'file_upload',
+          max_points: 100, max_file_size_mb: 10, allowed_file_types: ['pdf', 'doc'],
+          rubric: '', attached_links: [], newLink: ''
+        });
+        setTaskCourseId('');
+        setSelectAllStudents(true);
+        setSelectedStudentIds(new Set());
+        setCourseStudents([]);
+        window.location.reload();
+      }
+    } catch (err: any) {
+      clearTimeout(timeout);
+      setSubmitting(false);
+      alert('Error: ' + err.message);
     }
   };
 
@@ -464,6 +512,16 @@ export default function TeacherDashboard() {
     
     setSubmitting(true);
     const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const fetchHeaders = {
+      'Content-Type': 'application/json',
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${token}`,
+      'Prefer': 'return=representation'
+    };
 
     // Calcular puntos totales
     const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
@@ -502,48 +560,70 @@ export default function TeacherDashboard() {
       is_published: true
     };
 
-    const { error } = await supabase.from('evaluations').insert(evaluationPayload);
+    // Try evaluations table first via direct fetch
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 15000);
+    let success = false;
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/evaluations`, {
+        method: 'POST', headers: fetchHeaders, signal: ctrl.signal,
+        body: JSON.stringify(evaluationPayload)
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        success = true;
+      } else {
+        // Fallback to assignments table
+        console.warn('[CreateExam] evaluations insert failed, trying assignments fallback');
+        const fallbackPayload: any = {
+          course_id: examCourseId,
+          title: examData.title,
+          description: `Examen - ${questions.length} preguntas`,
+          due_date: examData.date,
+          assignment_type: 'exam',
+          max_points: totalPoints,
+          quiz_data: evaluationPayload,
+          target_type: selectAllStudents ? 'all_students' : 'specific_students',
+          target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
+          is_published: true
+        };
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), 15000);
+        const res2 = await fetch(`${supabaseUrl}/rest/v1/assignments`, {
+          method: 'POST', headers: fetchHeaders, signal: ctrl2.signal,
+          body: JSON.stringify(fallbackPayload)
+        });
+        clearTimeout(t2);
+        if (res2.ok) {
+          success = true;
+        } else {
+          const body = await res2.text();
+          alert('Error: ' + body);
+        }
+      }
+    } catch (err: any) {
+      clearTimeout(timeout);
+      alert('Error: ' + err.message);
+    }
 
     setSubmitting(false);
     
-    if (error) {
-      // Si la tabla evaluations no existe, usar assignments como fallback
-      console.error('Error en evaluations:', error);
-      const fallbackPayload: any = {
-        course_id: examCourseId,
-        title: examData.title,
-        description: `Examen - ${questions.length} preguntas`,
-        due_date: examData.date,
-        assignment_type: 'exam',
-        max_points: totalPoints,
-        quiz_data: evaluationPayload,
-        target_type: selectAllStudents ? 'all_students' : 'specific_students',
-        target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
-        is_published: true
-      };
-      
-      const { error: fallbackError } = await supabase.from('assignments').insert(fallbackPayload);
-      if (fallbackError) {
-        alert('Error: ' + fallbackError.message);
-        return;
-      }
+    if (success) {
+      const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
+      alert(`✓ Examen asignado a ${studentCount} estudiante(s)`);
+      setIsExamModalOpen(false);
+      setExamData({ 
+        title: '', date: '', duration: 60, scope: 'unit_exam',
+        passing_score: 60, max_attempts: 1, shuffle_questions: false,
+        shuffle_options: false, show_correct_answers: true
+      });
+      setQuestions([{ text: '', type: 'multiple_choice', optionA: '', optionB: '', optionC: '', optionD: '', correct: 'a', points: 10 }]);
+      setExamCourseId('');
+      setSelectAllStudents(true);
+      setSelectedStudentIds(new Set());
+      setCourseStudents([]);
+      window.location.reload();
     }
-    
-    const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
-    alert(`✓ Examen asignado a ${studentCount} estudiante(s)`);
-    setIsExamModalOpen(false);
-    setExamData({ 
-      title: '', date: '', duration: 60, scope: 'unit_exam',
-      passing_score: 60, max_attempts: 1, shuffle_questions: false,
-      shuffle_options: false, show_correct_answers: true
-    });
-    setQuestions([{ text: '', type: 'multiple_choice', optionA: '', optionB: '', optionC: '', optionD: '', correct: 'a', points: 10 }]);
-    setExamCourseId('');
-    setSelectAllStudents(true);
-    setSelectedStudentIds(new Set());
-    setCourseStudents([]);
-    window.location.reload();
-  };
 
   const currentCourse = courses.find(c => c.id === selectedCourseId);
 

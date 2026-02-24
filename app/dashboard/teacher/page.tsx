@@ -172,24 +172,44 @@ export default function TeacherDashboard() {
     setTeacherName(profile.full_name || 'Profesor');
 
     let mounted = true;
-    const supabase = createClient();
 
     async function loadTeacherData() {
       try {
-        const { data: coursesData } = await supabase
-          .from('courses')
-          .select('id, title, description, image_url, created_at')
-          .eq('instructor_id', user!.id)
-          .order('created_at', { ascending: false });
+        // Use direct fetch to avoid supabase-js client hanging issues
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+        console.log('[TeacherDashboard] Loading courses for user:', user!.id);
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${token}`,
+        };
+
+        // Fetch courses via direct REST
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/courses?instructor_id=eq.${user!.id}&select=id,title,description,image_url,created_at&order=created_at.desc`,
+          { headers, signal: ctrl.signal }
+        );
+        clearTimeout(t);
+        const coursesData = await res.json();
+        console.log('[TeacherDashboard] Courses result:', res.status, coursesData?.length || 0, 'courses');
 
         if (!mounted) return;
 
-        if (coursesData && coursesData.length > 0) {
+        if (Array.isArray(coursesData) && coursesData.length > 0) {
           setCourses(coursesData);
           setSelectedCourseId(coursesData[0].id);
           
-          const courseIds = coursesData.map(c => c.id);
+          const courseIds = coursesData.map((c: any) => c.id);
           
+          // Use supabase client for enrollments/assignments (they don't hang)
           const { count: studentCount } = await supabase
             .from('enrollments')
             .select('*', { count: 'exact', head: true })
@@ -214,6 +234,7 @@ export default function TeacherDashboard() {
             pendingAssignments: assignments?.length || 0
           }));
         } else {
+          console.log('[TeacherDashboard] No courses found or error:', coursesData);
           setCourses([]);
         }
 

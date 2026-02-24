@@ -50,24 +50,45 @@ export function useInstructorCourses(instructorId?: string) {
     queryFn: async (): Promise<Course[]> => {
       const supabase = createClient()
       
-      // Consulta simplificada sin JOIN - solo los cursos
-      const { data, error } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('instructor_id', instructorId)
-        .order('created_at', { ascending: false })
+      // Get auth token for direct fetch
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-      if (error) throw new Error(error.message)
+      console.log('[useInstructorCourses] Fetching for instructor:', instructorId)
+
+      // Use direct fetch to avoid supabase-js hanging issues  
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/courses?instructor_id=eq.${instructorId}&select=*&order=created_at.desc`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${token}`,
+          },
+          signal: controller.signal
+        }
+      )
+      clearTimeout(timeout)
+      
+      const data = await res.json()
+      console.log('[useInstructorCourses] Result:', res.status, Array.isArray(data) ? data.length + ' courses' : data)
+      
+      if (!res.ok) throw new Error(data?.message || 'Error al cargar cursos')
+      if (!Array.isArray(data)) return []
       
       // Si necesitamos los datos del instructor, los obtenemos por separado
-      if (data && data.length > 0) {
+      if (data.length > 0) {
         const { data: instructorData } = await supabase
           .from('profiles')
           .select('id, full_name, email')
           .eq('id', instructorId)
           .single()
         
-        // Agregar datos del instructor a cada curso
         const coursesWithInstructor = data.map(course => ({
           ...course,
           instructor: instructorData

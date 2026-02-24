@@ -450,47 +450,97 @@ export default function EditCoursePage() {
       const valid = ['youtube', 'vimeo', 'cloudflare', 'bunny', 'custom'];
       return valid.includes(p) ? p : 'custom';
     };
+
+    const sanitizeSlidesProvider = (p: string | undefined | null) => {
+      if (!p) return null;
+      const valid = ['google_slides', 'canva', 'pdf', 'custom'];
+      return valid.includes(p) ? p : 'custom';
+    };
     
     const payload = {
       topic_id: topicId,
       unit_id: topic.unit_id,
       course_id: courseId,
-      introduction: data.introduction || '',
+      introduction: data.introduction || ' ',
       introduction_format: data.introduction_format || 'markdown',
       video_url: mainVideo?.url || null,
-      video_provider: sanitizeProvider(mainVideo?.provider),
+      video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
       video_duration_seconds: mainVideo?.duration_seconds || null,
       pdf_url: pdfDoc?.url || null,
       pdf_title: pdfDoc?.title || null,
       slides_url: slidesDoc?.url || null,
-      slides_provider: slidesDoc?.provider || null,
+      slides_provider: slidesDoc?.url ? sanitizeSlidesProvider(slidesDoc?.provider) : null,
       is_published: data.is_published ?? false,
       additional_resources: JSON.stringify({
-        videos: additionalVideos,
-        quiz: data.quiz
+        videos: additionalVideos || [],
+        quiz: data.quiz || []
       })
     };
 
-    console.log('[SaveResources] Upserting for topic:', topicId, payload);
+    console.log('[SaveResources] Saving for topic:', topicId);
 
-    // Use upsert — inserts if no row for topic_id, updates if exists
-    // This leverages the UNIQUE(topic_id) constraint
-    const { data: result, error } = await supabase
-      .from('topic_resources')
-      .upsert(payload, { onConflict: 'topic_id' })
-      .select()
-      .single();
+    // Strategy: try check existing first, then INSERT or UPDATE separately
+    // (upsert + .select().single() can hang on some PostgREST versions)
+    try {
+      // Step 1: Check if resource row exists
+      const { data: existing } = await supabase
+        .from('topic_resources')
+        .select('id')
+        .eq('topic_id', topicId)
+        .maybeSingle();
 
-    console.log('[SaveResources] Result:', result, 'Error:', error);
-    
-    if (error) {
-      console.error('[SaveResources] Error:', error);
-      throw new Error(error.message || 'Error al guardar recursos');
-    }
-    
-    if (result) {
-      setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: result as TopicResources } : t) })));
+      console.log('[SaveResources] Existing resource:', existing);
+
+      let savedId: string | null = null;
+
+      if (existing?.id) {
+        // Step 2a: UPDATE existing row (no .select() to avoid PostgREST hang)
+        const { error: updateErr } = await supabase
+          .from('topic_resources')
+          .update(payload)
+          .eq('id', existing.id);
+        
+        if (updateErr) {
+          console.error('[SaveResources] Update error:', updateErr);
+          throw new Error(updateErr.message);
+        }
+        savedId = existing.id;
+        console.log('[SaveResources] Updated successfully, id:', savedId);
+      } else {
+        // Step 2b: INSERT new row
+        const { data: inserted, error: insertErr } = await supabase
+          .from('topic_resources')
+          .insert(payload)
+          .select('id')
+          .single();
+        
+        if (insertErr) {
+          console.error('[SaveResources] Insert error:', insertErr);
+          throw new Error(insertErr.message);
+        }
+        savedId = inserted?.id || null;
+        console.log('[SaveResources] Inserted successfully, id:', savedId);
+      }
+
+      // Step 3: Fetch the saved resource to update local state
+      if (savedId) {
+        const { data: savedResource } = await supabase
+          .from('topic_resources')
+          .select('*')
+          .eq('id', savedId)
+          .single();
+
+        if (savedResource) {
+          setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t) })));
+        }
+      }
+
+      // Close editor
       setEditingResources(null);
+      console.log('[SaveResources] Done!');
+    } catch (err: any) {
+      console.error('[SaveResources] Error:', err);
+      throw err;
     }
   };
 

@@ -93,10 +93,10 @@ $$;
 -- Grant execute to authenticated users
 GRANT EXECUTE ON FUNCTION save_topic_resources TO authenticated;
 
+-- Force PostgREST to reload schema and discover the new function
+NOTIFY pgrst, 'reload schema';
+
 -- =============================================
--- DONE! Test with:
--- SELECT save_topic_resources(
---   'topic-uuid'::uuid, 'unit-uuid'::uuid, 'course-uuid'::uuid,
---   'Test introduction', 'markdown'
--- );
+-- DONE! The function is now available via:
+-- supabase.rpc('save_topic_resources', { ... })
 -- =============================================

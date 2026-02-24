@@ -22,7 +22,6 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       .from('course_units')
       .select(`*, topics:unit_topics(id, title, order_index, is_published, estimated_minutes)`)
       .eq('course_id', courseId)
-      .eq('is_published', true)
       .order('order_index', { ascending: true }),
   ]);
 
@@ -43,7 +42,6 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const units = (unitsResult.data || []).map((unit: any) => ({
     ...unit,
     topics: (unit.topics || [])
-      .filter((t: any) => t.is_published)
       .sort((a: any, b: any) => a.order_index - b.order_index),
   }));
 

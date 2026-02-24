@@ -296,59 +296,144 @@ export default function EditCoursePage() {
     setUploading(false);
   };
 
+  // Helper: get auth headers for direct fetch
+  const getSupabaseHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    return { token, url, key, headers: {
+      'Content-Type': 'application/json',
+      'apikey': key,
+      'Authorization': `Bearer ${token}`,
+      'Prefer': 'return=representation'
+    }};
+  };
+
   const handleAddUnit = async () => {
     if (!newUnitTitle.trim()) return;
-    const { data, error } = await supabase.from('course_units').insert({
-      course_id: courseId, title: newUnitTitle, order_index: units.length, is_published: false
-    }).select().single();
-    if (!error && data) {
-      setUnits([...units, { ...data, topics: [] }]);
-      setNewUnitTitle('');
-      setExpandedUnits(prev => new Set([...prev, data.id]));
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/course_units`, {
+        method: 'POST', headers, signal: ctrl.signal,
+        body: JSON.stringify({ course_id: courseId, title: newUnitTitle, order_index: units.length, is_published: true })
+      });
+      clearTimeout(t);
+      const data = await res.json();
+      if (res.ok && data?.[0]) {
+        setUnits([...units, { ...data[0], topics: [] }]);
+        setNewUnitTitle('');
+        setExpandedUnits(prev => new Set([...prev, data[0].id]));
+      } else {
+        console.error('Error creating unit:', data);
+        alert('Error al crear unidad: ' + (data?.message || JSON.stringify(data)));
+      }
+    } catch (err: any) {
+      console.error('Error creating unit:', err);
+      alert('Error al crear unidad: ' + err.message);
     }
   };
 
   const handleUpdateUnit = async (unit: CourseUnit) => {
-    const { error } = await supabase.from('course_units').update({
-      title: unit.title, description: unit.description, learning_objectives: unit.learning_objectives,
-      estimated_hours: unit.estimated_hours, is_published: unit.is_published
-    }).eq('id', unit.id);
-    if (!error) { setUnits(units.map(u => u.id === unit.id ? unit : u)); setEditingUnit(null); }
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
+        method: 'PATCH', headers, signal: ctrl.signal,
+        body: JSON.stringify({
+          title: unit.title, description: unit.description, learning_objectives: unit.learning_objectives,
+          estimated_hours: unit.estimated_hours, is_published: unit.is_published
+        })
+      });
+      clearTimeout(t);
+      if (res.ok) { setUnits(units.map(u => u.id === unit.id ? unit : u)); setEditingUnit(null); }
+    } catch (err: any) {
+      console.error('Error updating unit:', err);
+    }
   };
 
   const handleDeleteUnit = async (unitId: string) => {
     if (!confirm('¿Eliminar esta unidad y todo su contenido?')) return;
-    const { error } = await supabase.from('course_units').delete().eq('id', unitId);
-    if (!error) setUnits(units.filter(u => u.id !== unitId));
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/course_units?id=eq.${unitId}`, {
+        method: 'DELETE', headers, signal: ctrl.signal
+      });
+      clearTimeout(t);
+      if (res.ok) setUnits(units.filter(u => u.id !== unitId));
+    } catch (err: any) {
+      console.error('Error deleting unit:', err);
+    }
   };
 
   const handleAddTopic = async (unitId: string) => {
     if (!newTopicTitle.trim()) return;
     const unit = units.find(u => u.id === unitId);
-    const { data, error } = await supabase.from('unit_topics').insert({
-      unit_id: unitId, course_id: courseId, title: newTopicTitle,
-      order_index: unit?.topics?.length || 0, is_published: false
-    }).select().single();
-    if (!error && data) {
-      setUnits(units.map(u => u.id === unitId ? { ...u, topics: [...(u.topics || []), { ...data, resources: null }] } : u));
-      setNewTopicTitle(''); setAddingTopicToUnit(null);
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/unit_topics`, {
+        method: 'POST', headers, signal: ctrl.signal,
+        body: JSON.stringify({
+          unit_id: unitId, course_id: courseId, title: newTopicTitle,
+          order_index: unit?.topics?.length || 0, is_published: true
+        })
+      });
+      clearTimeout(t);
+      const data = await res.json();
+      if (res.ok && data?.[0]) {
+        setUnits(units.map(u => u.id === unitId ? { ...u, topics: [...(u.topics || []), { ...data[0], resources: null }] } : u));
+        setNewTopicTitle(''); setAddingTopicToUnit(null);
+      } else {
+        console.error('Error creating topic:', data);
+      }
+    } catch (err: any) {
+      console.error('Error creating topic:', err);
+      alert('Error al crear tema: ' + err.message);
     }
   };
 
   const handleUpdateTopic = async (topic: UnitTopic) => {
-    const { error } = await supabase.from('unit_topics').update({
-      title: topic.title, estimated_minutes: topic.estimated_minutes, is_published: topic.is_published
-    }).eq('id', topic.id);
-    if (!error) {
-      setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
-      setEditingTopic(null);
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
+        method: 'PATCH', headers, signal: ctrl.signal,
+        body: JSON.stringify({
+          title: topic.title, estimated_minutes: topic.estimated_minutes, is_published: topic.is_published
+        })
+      });
+      clearTimeout(t);
+      if (res.ok) {
+        setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
+        setEditingTopic(null);
+      }
+    } catch (err: any) {
+      console.error('Error updating topic:', err);
     }
   };
 
   const handleDeleteTopic = async (topicId: string, unitId: string) => {
     if (!confirm('¿Eliminar este tema?')) return;
-    const { error } = await supabase.from('unit_topics').delete().eq('id', topicId);
-    if (!error) setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topicId}`, {
+        method: 'DELETE', headers, signal: ctrl.signal
+      });
+      clearTimeout(t);
+      if (res.ok) setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+    } catch (err: any) {
+      console.error('Error deleting topic:', err);
+    }
   };
 
   // NUEVO: Iniciar creación de tema con recursos
@@ -358,7 +443,7 @@ export default function EditCoursePage() {
       unitId,
       title: '',
       estimated_minutes: 30,
-      is_published: false,
+      is_published: true,
       introduction: '',
       videos: [],
       documents: [],
@@ -376,18 +461,39 @@ export default function EditCoursePage() {
     const unit = units.find(u => u.id === newTopicData.unitId);
     if (!unit) return;
 
-    // 1. Crear el tema
-    const { data: topicData, error: topicError } = await supabase.from('unit_topics').insert({
-      unit_id: newTopicData.unitId,
-      course_id: courseId,
-      title: newTopicData.title,
-      order_index: unit.topics?.length || 0,
-      is_published: newTopicData.is_published,
-      estimated_minutes: newTopicData.estimated_minutes
-    }).select().single();
+    // 1. Crear el tema via direct fetch (supabase-js client can abort)
+    let topicData: any;
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/unit_topics`, {
+        method: 'POST', headers, signal: ctrl.signal,
+        body: JSON.stringify({
+          unit_id: newTopicData.unitId,
+          course_id: courseId,
+          title: newTopicData.title,
+          order_index: unit.topics?.length || 0,
+          is_published: newTopicData.is_published ?? true,
+          estimated_minutes: newTopicData.estimated_minutes
+        })
+      });
+      clearTimeout(t);
+      const result = await res.json();
+      console.log('[CreateTopic] Insert result:', res.status, result);
+      if (!res.ok) {
+        alert('Error al crear el tema: ' + (result?.message || JSON.stringify(result)));
+        return;
+      }
+      topicData = result?.[0] || result;
+    } catch (err: any) {
+      console.error('[CreateTopic] Insert error:', err);
+      alert('Error al crear el tema: ' + err.message);
+      return;
+    }
 
-    if (topicError || !topicData) {
-      alert('Error al crear el tema: ' + topicError?.message);
+    if (!topicData?.id) {
+      alert('Error al crear el tema: no se obtuvo ID');
       return;
     }
 

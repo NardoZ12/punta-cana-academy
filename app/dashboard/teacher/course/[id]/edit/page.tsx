@@ -245,45 +245,56 @@ export default function EditCoursePage() {
 
   const handleSave = async () => {
     setSaving(true);
+    console.log('[SaveCourse] Saving course:', courseId);
     try {
-      // Obtener el usuario actual para asegurar que instructor_id está correcto
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        alert('❌ Sesión expirada. Por favor inicia sesión de nuevo.');
-        setSaving(false);
-        return;
+      const { url, headers } = await getSupabaseHeaders();
+      console.log('[SaveCourse] Got headers, patching...');
+
+      // Assign instructor_id if null
+      const session = await supabase.auth.getSession();
+      const userId = session?.data?.session?.user?.id;
+      if (userId) {
+        const ctrl0 = new AbortController();
+        const t0 = setTimeout(() => ctrl0.abort(), 15000);
+        await fetch(`${url}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
+          method: 'PATCH', headers, signal: ctrl0.signal,
+          body: JSON.stringify({ instructor_id: userId })
+        });
+        clearTimeout(t0);
       }
 
-      // Primero asegurar que instructor_id esté asignado (fix para cursos sin instructor)
-      await supabase.from('courses').update({ instructor_id: user.id }).eq('id', courseId).is('instructor_id', null);
-
-      const { data, error } = await supabase.from('courses').update({
-        title: courseData.title, 
-        description: courseData.description, 
-        price: courseData.price,
-        level: courseData.level, 
-        category: courseData.category, 
-        image_url: courseData.image_url || null,
-        max_students: courseData.max_students,
-        duration_hours: courseData.duration_hours, 
-        start_date: courseData.start_date || null, 
-        end_date: courseData.end_date || null
-      }).eq('id', courseId).select();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
+        method: 'PATCH', headers, signal: ctrl.signal,
+        body: JSON.stringify({
+          title: courseData.title,
+          description: courseData.description,
+          price: courseData.price,
+          level: courseData.level,
+          category: courseData.category,
+          image_url: courseData.image_url || null,
+          max_students: courseData.max_students,
+          duration_hours: courseData.duration_hours,
+          start_date: courseData.start_date || null,
+          end_date: courseData.end_date || null
+        })
+      });
+      clearTimeout(t);
+      console.log('[SaveCourse] Response:', res.status);
       
       setSaving(false);
       
-      if (error) {
-        console.error('Error al guardar:', error);
-        alert('❌ Error al guardar: ' + error.message);
-      } else if (!data || data.length === 0) {
-        // RLS bloqueó la actualización — no se afectaron filas
-        alert('❌ No se pudo guardar. Puede que no tengas permisos para editar este curso. Contacta al administrador.');
-      } else {
+      if (res.ok) {
         await revalidateAfterCourseUpdate(courseId);
         alert('✅ Cambios guardados correctamente');
+      } else {
+        const body = await res.text();
+        console.error('[SaveCourse] Error:', body);
+        alert('❌ Error al guardar: ' + body);
       }
     } catch (err: any) {
-      console.error('Error inesperado al guardar:', err);
+      console.error('[SaveCourse] Error:', err);
       setSaving(false);
       alert('❌ Error inesperado: ' + (err.message || 'Intenta de nuevo'));
     }
@@ -292,15 +303,27 @@ export default function EditCoursePage() {
   const handleTogglePublish = async () => {
     try {
       const newStatus = !courseData.is_published;
-      const { data, error } = await supabase.from('courses').update({ is_published: newStatus }).eq('id', courseId).select();
-      if (!error && data && data.length > 0) {
+      console.log('[TogglePublish] Setting published:', newStatus);
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
+        method: 'PATCH', headers, signal: ctrl.signal,
+        body: JSON.stringify({ is_published: newStatus })
+      });
+      clearTimeout(t);
+      console.log('[TogglePublish] Response:', res.status);
+      if (res.ok) {
         setCourseData(prev => ({ ...prev, is_published: newStatus }));
         await revalidateAfterCourseUpdate(courseId);
         alert(newStatus ? '✅ Curso publicado' : '✅ Curso despublicado');
       } else {
-        alert('❌ No se pudo cambiar el estado de publicación');
+        const body = await res.text();
+        console.error('[TogglePublish] Error:', body);
+        alert('❌ No se pudo cambiar el estado de publicación: ' + body);
       }
     } catch (err: any) {
+      console.error('[TogglePublish] Error:', err);
       alert('❌ Error: ' + (err.message || 'Intenta de nuevo'));
     }
   };
@@ -310,17 +333,32 @@ export default function EditCoursePage() {
     const file = e.target.files[0];
     const fileName = `course-${courseId}-${Date.now()}.${file.name.split('.').pop()}`;
     setUploading(true);
+    console.log('[ImageUpload] Uploading:', fileName);
     try {
+      // Storage upload still uses supabase client (storage API works fine)
       const { error } = await supabase.storage.from('Courses').upload(fileName, file);
       if (error) { alert('Error subiendo imagen: ' + error.message); setUploading(false); return; }
       const { data: { publicUrl } } = supabase.storage.from('Courses').getPublicUrl(fileName);
-      const { data, error: updateError } = await supabase.from('courses').update({ image_url: publicUrl }).eq('id', courseId).select();
-      if (updateError || !data || data.length === 0) {
-        alert('❌ Imagen subida pero no se pudo actualizar el curso. Verifica permisos.');
-      } else {
+      console.log('[ImageUpload] Public URL:', publicUrl);
+      
+      // Update course with direct fetch
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
+        method: 'PATCH', headers, signal: ctrl.signal,
+        body: JSON.stringify({ image_url: publicUrl })
+      });
+      clearTimeout(t);
+      console.log('[ImageUpload] Update response:', res.status);
+      if (res.ok) {
         setCourseData(prev => ({ ...prev, image_url: publicUrl }));
+      } else {
+        const body = await res.text();
+        alert('❌ Imagen subida pero no se pudo actualizar el curso: ' + body);
       }
     } catch (err: any) {
+      console.error('[ImageUpload] Error:', err);
       alert('Error: ' + (err.message || 'Intenta de nuevo'));
     }
     setUploading(false);
@@ -330,8 +368,15 @@ export default function EditCoursePage() {
   const getSupabaseHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    console.log('[getSupabaseHeaders] token:', token ? 'YES' : 'NO', 'url:', url ? 'YES' : 'NO', 'key:', key ? 'YES' : 'NO');
+    
+    if (!token) throw new Error('No hay sesión activa. Por favor inicia sesión de nuevo.');
+    if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL no está configurada');
+    if (!key) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY no está configurada');
+    
     return { token, url, key, headers: {
       'Content-Type': 'application/json',
       'apikey': key,
@@ -880,23 +925,57 @@ export default function EditCoursePage() {
       questions: JSON.stringify(assessmentData.questions || [])
     };
 
-    let result;
-    if (unit.assessment?.id) {
-      result = await supabase.from('unit_assessments').update(payload).eq('id', unit.assessment.id).select().single();
-    } else {
-      result = await supabase.from('unit_assessments').insert(payload).select().single();
+    let savedData: any = null;
+    try {
+      const { url, headers } = await getSupabaseHeaders();
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      
+      if (unit.assessment?.id) {
+        console.log('[SaveAssessment] Updating assessment:', unit.assessment.id);
+        const res = await fetch(`${url}/rest/v1/unit_assessments?id=eq.${unit.assessment.id}`, {
+          method: 'PATCH', headers, signal: ctrl.signal,
+          body: JSON.stringify(payload)
+        });
+        clearTimeout(t);
+        if (res.ok) {
+          const arr = await res.json();
+          savedData = arr?.[0] || arr;
+        } else {
+          const body = await res.text();
+          alert('Error al guardar evaluación: ' + body);
+          return;
+        }
+      } else {
+        console.log('[SaveAssessment] Creating new assessment');
+        const res = await fetch(`${url}/rest/v1/unit_assessments`, {
+          method: 'POST', headers, signal: ctrl.signal,
+          body: JSON.stringify(payload)
+        });
+        clearTimeout(t);
+        if (res.ok) {
+          const arr = await res.json();
+          savedData = arr?.[0] || arr;
+        } else {
+          const body = await res.text();
+          alert('Error al guardar evaluación: ' + body);
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.error('[SaveAssessment] Error:', err);
+      alert('Error al guardar: ' + err.message);
+      return;
     }
 
-    if (!result.error && result.data) {
+    if (savedData) {
       const savedAssessment = {
-        ...result.data,
+        ...savedData,
         questions: assessmentData.questions || []
       } as UnitAssessment;
       
       setUnits(units.map(u => u.id === unit.id ? { ...u, assessment: savedAssessment } : u));
       setEditingAssessment(null);
-    } else {
-      alert('Error al guardar: ' + result.error?.message);
     }
   };
 
@@ -1350,8 +1429,8 @@ export default function EditCoursePage() {
       {/* Modal: Evaluación de Unidad */}
       {editingAssessment && (
         <UnitAssessmentEditorModal
-          unit={editingAssessment}
-          existingAssessment={editingAssessment.assessment || null}
+          unit={editingAssessment.unit}
+          existingAssessment={(editingAssessment.assessment as UnitAssessment) || null}
           courseId={courseId}
           onSave={handleSaveAssessment}
           onClose={() => setEditingAssessment(null)}
@@ -1378,6 +1457,7 @@ function UnitAssessmentEditorModal({
   const [activeTab, setActiveTab] = useState<'settings' | 'upload' | 'create'>('settings');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const supabase = createClient();
   
   const [data, setData] = useState<{
     title: string;
@@ -1988,8 +2068,8 @@ function CreateTopicWithResourcesModal({ data, onChange, onSave, onClose }: Crea
             >
               <section.icon className="w-4 h-4" />
               {section.label}
-              {section.count !== undefined && section.count > 0 && (
-                <span className="bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5 rounded-full">{section.count}</span>
+              {'count' in section && (section as any).count > 0 && (
+                <span className="bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5 rounded-full">{(section as any).count}</span>
               )}
               {activeSection === section.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cyan-500" />}
             </button>

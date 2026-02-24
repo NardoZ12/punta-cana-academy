@@ -145,6 +145,37 @@ ALTER TABLE course_modules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_lessons ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================
+-- FUNCIONES HELPER (SECURITY DEFINER) para romper recursión RLS
+-- Estas funciones bypasean RLS internamente, evitando el loop circular
+-- ==========================================
+
+-- Chequear si un usuario está inscrito en un curso (sin pasar por RLS de enrollments)
+CREATE OR REPLACE FUNCTION is_enrolled_in_course(p_user_id UUID, p_course_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM enrollments 
+    WHERE student_id = p_user_id AND course_id = p_course_id
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- Chequear si un usuario es instructor de un curso (sin pasar por RLS de courses)
+CREATE OR REPLACE FUNCTION is_instructor_of_course(p_user_id UUID, p_course_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM courses 
+    WHERE id = p_course_id AND instructor_id = p_user_id
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- Chequear si un curso está publicado (sin pasar por RLS de courses)
+CREATE OR REPLACE FUNCTION is_course_published(p_course_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM courses WHERE id = p_course_id AND is_published = true
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- ==========================================
 -- COURSES: Políticas de lectura
 -- ==========================================
 
@@ -168,11 +199,7 @@ CREATE POLICY "Instructors view own courses" ON courses
 DROP POLICY IF EXISTS "Enrolled students view their courses" ON courses;
 CREATE POLICY "Enrolled students view their courses" ON courses
     FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM enrollments 
-            WHERE enrollments.course_id = courses.id 
-            AND enrollments.student_id = auth.uid()
-        )
+        is_enrolled_in_course(auth.uid(), id)
     );
 
 -- ==========================================
@@ -212,34 +239,15 @@ DROP POLICY IF EXISTS "Instructors can manage own courses" ON courses;
 DROP POLICY IF EXISTS "Anyone can view published modules" ON course_modules;
 CREATE POLICY "Anyone can view published modules" ON course_modules
     FOR SELECT USING (
-        -- Cualquiera puede ver módulos de cursos publicados (página principal/detalle)
-        EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = course_modules.course_id 
-            AND courses.is_published = true
-        )
-        -- O el instructor del curso
-        OR EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = course_modules.course_id 
-            AND courses.instructor_id = auth.uid()
-        )
-        -- O estudiantes inscritos
-        OR EXISTS (
-            SELECT 1 FROM enrollments 
-            WHERE enrollments.course_id = course_modules.course_id 
-            AND enrollments.student_id = auth.uid()
-        )
+        is_course_published(course_id)
+        OR is_instructor_of_course(auth.uid(), course_id)
+        OR is_enrolled_in_course(auth.uid(), course_id)
     );
 
 DROP POLICY IF EXISTS "Teachers can manage course modules" ON course_modules;
 CREATE POLICY "Teachers can manage course modules" ON course_modules
     FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = course_modules.course_id 
-            AND courses.instructor_id = auth.uid()
-        )
+        is_instructor_of_course(auth.uid(), course_id)
     );
 
 -- ==========================================
@@ -249,35 +257,15 @@ CREATE POLICY "Teachers can manage course modules" ON course_modules
 DROP POLICY IF EXISTS "Students can view lessons of enrolled courses" ON course_lessons;
 CREATE POLICY "Students can view lessons of enrolled courses" ON course_lessons
     FOR SELECT USING (
-        -- Lecciones de cursos publicados (para el detalle público)
-        EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = course_lessons.course_id 
-            AND courses.is_published = true
-        )
-        -- O el instructor
-        OR EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = course_lessons.course_id 
-            AND courses.instructor_id = auth.uid()
-        )
-        -- O estudiantes inscritos
-        OR EXISTS (
-            SELECT 1 FROM enrollments 
-            WHERE enrollments.course_id = course_lessons.course_id 
-            AND enrollments.student_id = auth.uid()
-            AND enrollments.status = 'active'
-        )
+        is_course_published(course_id)
+        OR is_instructor_of_course(auth.uid(), course_id)
+        OR is_enrolled_in_course(auth.uid(), course_id)
     );
 
 DROP POLICY IF EXISTS "Instructors can manage lessons of own courses" ON course_lessons;
 CREATE POLICY "Instructors can manage lessons of own courses" ON course_lessons
     FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = course_lessons.course_id 
-            AND courses.instructor_id = auth.uid()
-        )
+        is_instructor_of_course(auth.uid(), course_id)
     );
 
 -- ==========================================
@@ -287,26 +275,15 @@ CREATE POLICY "Instructors can manage lessons of own courses" ON course_lessons
 DROP POLICY IF EXISTS "View units" ON course_units;
 CREATE POLICY "View units" ON course_units 
     FOR SELECT USING (
-        -- Unidades publicadas de cursos publicados
-        (course_units.is_published = true AND EXISTS (
-            SELECT 1 FROM courses WHERE id = course_units.course_id AND is_published = true
-        ))
-        -- O el instructor
-        OR EXISTS (
-            SELECT 1 FROM courses WHERE id = course_units.course_id AND instructor_id = auth.uid()
-        )
-        -- O estudiantes inscritos
-        OR EXISTS (
-            SELECT 1 FROM enrollments 
-            WHERE enrollments.course_id = course_units.course_id 
-            AND enrollments.student_id = auth.uid()
-        )
+        (is_published = true AND is_course_published(course_id))
+        OR is_instructor_of_course(auth.uid(), course_id)
+        OR is_enrolled_in_course(auth.uid(), course_id)
     );
 
 DROP POLICY IF EXISTS "Manage units" ON course_units;
 CREATE POLICY "Manage units" ON course_units 
     FOR ALL USING (
-        EXISTS (SELECT 1 FROM courses WHERE id = course_units.course_id AND instructor_id = auth.uid())
+        is_instructor_of_course(auth.uid(), course_id)
     );
 
 -- ==========================================
@@ -316,23 +293,15 @@ CREATE POLICY "Manage units" ON course_units
 DROP POLICY IF EXISTS "View topics" ON unit_topics;
 CREATE POLICY "View topics" ON unit_topics 
     FOR SELECT USING (
-        (unit_topics.is_published = true AND EXISTS (
-            SELECT 1 FROM courses WHERE id = unit_topics.course_id AND is_published = true
-        ))
-        OR EXISTS (
-            SELECT 1 FROM courses WHERE id = unit_topics.course_id AND instructor_id = auth.uid()
-        )
-        OR EXISTS (
-            SELECT 1 FROM enrollments 
-            WHERE enrollments.course_id = unit_topics.course_id 
-            AND enrollments.student_id = auth.uid()
-        )
+        (is_published = true AND is_course_published(course_id))
+        OR is_instructor_of_course(auth.uid(), course_id)
+        OR is_enrolled_in_course(auth.uid(), course_id)
     );
 
 DROP POLICY IF EXISTS "Manage topics" ON unit_topics;
 CREATE POLICY "Manage topics" ON unit_topics 
     FOR ALL USING (
-        EXISTS (SELECT 1 FROM courses WHERE id = unit_topics.course_id AND instructor_id = auth.uid())
+        is_instructor_of_course(auth.uid(), course_id)
     );
 
 -- ==========================================
@@ -342,18 +311,14 @@ CREATE POLICY "Manage topics" ON unit_topics
 DROP POLICY IF EXISTS "View resources" ON topic_resources;
 CREATE POLICY "View resources" ON topic_resources 
     FOR SELECT USING (
-        EXISTS (SELECT 1 FROM courses WHERE id = topic_resources.course_id AND instructor_id = auth.uid())
-        OR EXISTS (
-            SELECT 1 FROM enrollments 
-            WHERE enrollments.course_id = topic_resources.course_id 
-            AND enrollments.student_id = auth.uid()
-        )
+        is_instructor_of_course(auth.uid(), course_id)
+        OR is_enrolled_in_course(auth.uid(), course_id)
     );
 
 DROP POLICY IF EXISTS "Manage resources" ON topic_resources;
 CREATE POLICY "Manage resources" ON topic_resources 
     FOR ALL USING (
-        EXISTS (SELECT 1 FROM courses WHERE id = topic_resources.course_id AND instructor_id = auth.uid())
+        is_instructor_of_course(auth.uid(), course_id)
     );
 
 -- ==========================================
@@ -375,11 +340,7 @@ CREATE POLICY "Students can update own enrollments" ON enrollments
 DROP POLICY IF EXISTS "Instructors can view enrollments for their courses" ON enrollments;
 CREATE POLICY "Instructors can view enrollments for their courses" ON enrollments
     FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM courses 
-            WHERE courses.id = enrollments.course_id 
-            AND courses.instructor_id = auth.uid()
-        )
+        is_instructor_of_course(auth.uid(), course_id)
     );
 
 -- ==========================================

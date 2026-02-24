@@ -8,6 +8,8 @@ interface ButtonProps {
   fullWidth?: boolean;
   type?: 'button' | 'submit' | 'reset';
   disabled?: boolean;
+  className?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export const Button = ({ 
@@ -16,7 +18,9 @@ export const Button = ({
   variant = 'primary', 
   fullWidth = false,
   type = 'button',
-  disabled = false
+  disabled = false,
+  className = '',
+  size = 'md'
 }: ButtonProps) => {
   
   // Estilos base que siempre tendrá el botón
@@ -40,7 +44,7 @@ export const Button = ({
       type={type}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`${baseStyles} ${variants[variant]} ${fullWidth ? 'w-full' : ''}`}
+      className={`${baseStyles} ${variants[variant]} ${fullWidth ? 'w-full' : ''} ${className}`}
     >
       {children}
     </button>

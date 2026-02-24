@@ -149,17 +149,11 @@ export default function CoursesPage() {
               >
                 {/* Imagen del curso */}
                 <div className="h-48 relative overflow-hidden">
-                  {course.image_url ? (
-                    <img 
-                      src={course.image_url} 
-                      alt={course.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                      <BookOpen className="h-16 w-16 text-white opacity-80" />
-                    </div>
-                  )}
+                  <img 
+                    src={course.image_url || '/images/logos/thumbnail-ingles-principiantes.png'} 
+                    alt={course.title}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 
                 <div className="p-6">

@@ -26,7 +26,7 @@ interface Course {
   price: number;
   level: string;
   modality: string;
-  teacher_id: string;
+  instructor_id: string;
   is_published: boolean;
   created_at: string;
   profiles?: {
@@ -71,8 +71,8 @@ export default function StudentCoursesPage() {
           id, progress, grade, enrolled_at,
           courses (
             id, title, description, image_url, price, level, modality, 
-            teacher_id, is_published, created_at,
-            profiles:teacher_id (full_name)
+            instructor_id, is_published, created_at,
+            profiles:instructor_id (full_name)
           )
         `)
         .eq('student_id', user.id)
@@ -89,8 +89,8 @@ export default function StudentCoursesPage() {
         .from('courses')
         .select(`
           id, title, description, image_url, price, level, modality,
-          teacher_id, is_published, created_at,
-          profiles:teacher_id (full_name)
+          instructor_id, is_published, created_at,
+          profiles:instructor_id (full_name)
         `)
         .eq('is_published', true);
 

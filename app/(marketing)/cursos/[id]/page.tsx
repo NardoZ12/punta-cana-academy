@@ -1,106 +1,33 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/utils/supabase/client';
+import { notFound } from 'next/navigation';
+import { createClient } from '@/utils/supabase/server';
 import { Button } from '@/components/atoms/Button';
+import EnrollButton from './EnrollButton';
 
-export default function CourseDetailsPage() {
-  const params = useParams();
-  const router = useRouter();
-  const supabase = createClient();
-  
-  const [course, setCourse] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [enrolling, setEnrolling] = useState(false); // Estado para el botón de carga
-  const [isEnrolled, setIsEnrolled] = useState(false); // Para saber si ya lo compró
+// Revalidar cada 60 segundos para mantener datos frescos
+export const revalidate = 60;
 
-  useEffect(() => {
-    async function fetchCourseAndStatus() {
-      const courseId = params?.id as string;
-      if (!courseId) return;
+export default async function CourseDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: courseId } = await params;
+  const supabase = await createClient();
 
-      // 1. Cargar datos del curso
-      const { data: courseData, error } = await supabase
-        .from('courses')
-        .select(`*, course_modules (*, course_lessons (*))`)
-        .eq('id', courseId)
-        .single();
+  // Fetch del curso en el servidor - instantáneo para el usuario
+  const { data: course, error } = await supabase
+    .from('courses')
+    .select(`*, course_modules (*, course_lessons (*))`)
+    .eq('id', courseId)
+    .single();
 
-      if (error) {
-        console.error("Error:", error.message);
-      } else {
-        // Ordenar módulos
-        if (courseData.course_modules) {
-          courseData.course_modules.sort((a: any, b: any) => a.sort_order - b.sort_order);
-          courseData.course_modules.forEach((mod: any) => {
-             if (mod.course_lessons) mod.course_lessons.sort((a: any, b: any) => a.sort_order - b.sort_order);
-          });
-        }
-        setCourse(courseData);
+  if (error || !course) {
+    notFound();
+  }
 
-        // 2. Verificar si el usuario YA está inscrito (para cambiar el botón)
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: enrollment } = await supabase
-            .from('enrollments')
-            .select('id')
-            .eq('course_id', courseId)
-            .eq('student_id', user.id)
-            .single();
-          
-          if (enrollment) setIsEnrolled(true);
-        }
-      }
-      setLoading(false);
-    }
-    fetchCourseAndStatus();
-  }, [params]);
-
-  // --- FUNCIÓN DE INSCRIPCIÓN ---
-  const handleEnroll = async () => {
-    setEnrolling(true);
-    
-    // 1. Verificar usuario
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      // Si no hay usuario, guardar a dónde quería ir y mandar al login
-      alert("🔒 Debes iniciar sesión para inscribirte.");
-      router.push('/login'); // Asegúrate de tener esta ruta o cámbiala por la tuya
-      return;
-    }
-
-    // 2. Crear la inscripción
-    const { error } = await supabase
-      .from('enrollments')
-      .insert({
-        course_id: course.id,
-        student_id: user.id,
-        progress: 0,
-        grade: 0
-      });
-
-    if (error) {
-      alert("Error al inscribirse: " + error.message);
-      setEnrolling(false);
-    } else {
-      // 3. Éxito! Redirigir al dashboard
-      alert("¡Felicidades! Te has inscrito correctamente. 🎉");
-      router.push('/dashboard/student');
-    }
-  };
-
-  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Cargando...</div>;
-
-  if (!course) {
-    return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
-        <h1 className="text-3xl font-bold mb-4">Curso no encontrado 🤒</h1>
-        <Link href="/cursos"><Button variant="outline">Volver al catálogo</Button></Link>
-      </div>
-    );
+  // Ordenar módulos y lecciones en el servidor
+  if (course.course_modules) {
+    course.course_modules.sort((a: any, b: any) => a.sort_order - b.sort_order);
+    course.course_modules.forEach((mod: any) => {
+      if (mod.course_lessons) mod.course_lessons.sort((a: any, b: any) => a.sort_order - b.sort_order);
+    });
   }
 
   return (
@@ -110,12 +37,14 @@ export default function CourseDetailsPage() {
       <div className="relative w-full h-[75vh] min-h-[550px] flex items-center justify-center overflow-hidden -mt-20">
         
         {/* Fondo */}
-        {course.image_url && (
-           <div className="absolute inset-0 z-0">
-             <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black z-10" />
-             <img src={course.image_url} alt={course.title} className="w-full h-full object-cover opacity-90" />
-           </div>
-        )}
+        <div className="absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black z-10" />
+          <img 
+            src={course.image_url || '/images/logos/thumbnail-ingles-principiantes.png'} 
+            alt={course.title} 
+            className="w-full h-full object-cover opacity-90" 
+          />
+        </div>
 
         {/* Info Central */}
         <div className="relative z-20 text-center px-4 max-w-5xl mx-auto mt-20">
@@ -141,22 +70,7 @@ export default function CourseDetailsPage() {
                </div>
              </div>
              
-             {isEnrolled ? (
-               <Link href="/dashboard/student" className="w-full md:w-auto">
-                 <Button variant="secondary" className="w-full md:w-auto rounded-xl md:rounded-full px-6 md:px-8 py-3 md:py-4 text-sm md:text-lg bg-green-600 hover:bg-green-700 text-white border-none font-medium">
-                   ✅ Ya inscrito - Ir a Clases
-                 </Button>
-               </Link>
-             ) : (
-               <Button 
-                 onClick={handleEnroll} 
-                 disabled={enrolling}
-                 variant="primary" 
-                 className="w-full md:w-auto rounded-xl md:rounded-full px-6 md:px-8 py-3 md:py-4 text-sm md:text-lg shadow-lg hover:shadow-cyan-500/50 transition-all transform hover:-translate-y-1 font-medium"
-               >
-                 {enrolling ? 'Procesando...' : '¡Acceso Gratuito a Classroom!'}
-               </Button>
-             )}
+             <EnrollButton courseId={courseId} />
           </div>
         </div>
       </div>

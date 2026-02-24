@@ -215,26 +215,63 @@ export default function EditCoursePage() {
 
   const handleSave = async () => {
     setSaving(true);
-    const { error } = await supabase.from('courses').update({
-      title: courseData.title, description: courseData.description, price: courseData.price,
-      level: courseData.level, category: courseData.category, max_students: courseData.max_students,
-      duration_hours: courseData.duration_hours, start_date: courseData.start_date || null, end_date: courseData.end_date || null
-    }).eq('id', courseId);
-    setSaving(false);
-    if (error) {
-      alert('Error: ' + error.message);
-    } else {
-      await revalidateAfterCourseUpdate(courseId);
-      alert('✓ Cambios guardados y publicados en toda la plataforma');
+    try {
+      // Obtener el usuario actual para asegurar que instructor_id está correcto
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('❌ Sesión expirada. Por favor inicia sesión de nuevo.');
+        setSaving(false);
+        return;
+      }
+
+      // Primero asegurar que instructor_id esté asignado (fix para cursos sin instructor)
+      await supabase.from('courses').update({ instructor_id: user.id }).eq('id', courseId).is('instructor_id', null);
+
+      const { data, error } = await supabase.from('courses').update({
+        title: courseData.title, 
+        description: courseData.description, 
+        price: courseData.price,
+        level: courseData.level, 
+        category: courseData.category, 
+        image_url: courseData.image_url || null,
+        max_students: courseData.max_students,
+        duration_hours: courseData.duration_hours, 
+        start_date: courseData.start_date || null, 
+        end_date: courseData.end_date || null
+      }).eq('id', courseId).select();
+      
+      setSaving(false);
+      
+      if (error) {
+        console.error('Error al guardar:', error);
+        alert('❌ Error al guardar: ' + error.message);
+      } else if (!data || data.length === 0) {
+        // RLS bloqueó la actualización — no se afectaron filas
+        alert('❌ No se pudo guardar. Puede que no tengas permisos para editar este curso. Contacta al administrador.');
+      } else {
+        await revalidateAfterCourseUpdate(courseId);
+        alert('✅ Cambios guardados correctamente');
+      }
+    } catch (err: any) {
+      console.error('Error inesperado al guardar:', err);
+      setSaving(false);
+      alert('❌ Error inesperado: ' + (err.message || 'Intenta de nuevo'));
     }
   };
 
   const handleTogglePublish = async () => {
-    const newStatus = !courseData.is_published;
-    const { error } = await supabase.from('courses').update({ is_published: newStatus }).eq('id', courseId);
-    if (!error) {
-      setCourseData(prev => ({ ...prev, is_published: newStatus }));
-      await revalidateAfterCourseUpdate(courseId);
+    try {
+      const newStatus = !courseData.is_published;
+      const { data, error } = await supabase.from('courses').update({ is_published: newStatus }).eq('id', courseId).select();
+      if (!error && data && data.length > 0) {
+        setCourseData(prev => ({ ...prev, is_published: newStatus }));
+        await revalidateAfterCourseUpdate(courseId);
+        alert(newStatus ? '✅ Curso publicado' : '✅ Curso despublicado');
+      } else {
+        alert('❌ No se pudo cambiar el estado de publicación');
+      }
+    } catch (err: any) {
+      alert('❌ Error: ' + (err.message || 'Intenta de nuevo'));
     }
   };
 
@@ -243,11 +280,19 @@ export default function EditCoursePage() {
     const file = e.target.files[0];
     const fileName = `course-${courseId}-${Date.now()}.${file.name.split('.').pop()}`;
     setUploading(true);
-    const { error } = await supabase.storage.from('Courses').upload(fileName, file);
-    if (error) { alert('Error: ' + error.message); setUploading(false); return; }
-    const { data: { publicUrl } } = supabase.storage.from('Courses').getPublicUrl(fileName);
-    await supabase.from('courses').update({ image_url: publicUrl }).eq('id', courseId);
-    setCourseData(prev => ({ ...prev, image_url: publicUrl }));
+    try {
+      const { error } = await supabase.storage.from('Courses').upload(fileName, file);
+      if (error) { alert('Error subiendo imagen: ' + error.message); setUploading(false); return; }
+      const { data: { publicUrl } } = supabase.storage.from('Courses').getPublicUrl(fileName);
+      const { data, error: updateError } = await supabase.from('courses').update({ image_url: publicUrl }).eq('id', courseId).select();
+      if (updateError || !data || data.length === 0) {
+        alert('❌ Imagen subida pero no se pudo actualizar el curso. Verifica permisos.');
+      } else {
+        setCourseData(prev => ({ ...prev, image_url: publicUrl }));
+      }
+    } catch (err: any) {
+      alert('Error: ' + (err.message || 'Intenta de nuevo'));
+    }
     setUploading(false);
   };
 

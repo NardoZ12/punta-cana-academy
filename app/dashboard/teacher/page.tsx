@@ -624,6 +624,7 @@ export default function TeacherDashboard() {
       setCourseStudents([]);
       window.location.reload();
     }
+  };
 
   const currentCourse = courses.find(c => c.id === selectedCourseId);
 

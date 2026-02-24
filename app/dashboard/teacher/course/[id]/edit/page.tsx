@@ -404,7 +404,7 @@ export default function EditCoursePage() {
       introduction: newTopicData.introduction || '',
       introduction_format: 'markdown',
       video_url: mainVideo?.url || null,
-      video_provider: mainVideo?.provider || null,
+      video_provider: mainVideo?.provider && ['youtube','vimeo','cloudflare','bunny','custom'].includes(mainVideo.provider) ? mainVideo.provider : (mainVideo?.url ? 'custom' : null),
       video_duration_seconds: mainVideo?.duration_seconds || null,
       pdf_url: pdfDoc?.url || null,
       pdf_title: pdfDoc?.title || null,
@@ -443,14 +443,19 @@ export default function EditCoursePage() {
     const additionalVideos = data.videos.slice(1);
     const pdfDoc = data.documents.find(d => d.type === 'pdf');
     const slidesDoc = data.documents.find(d => d.type === 'slides');
-    
-    const { data: existing } = await supabase.from('topic_resources').select('id').eq('topic_id', topicId).single();
+
+    // Sanitize provider to match DB CHECK constraint
+    const sanitizeProvider = (p: string | undefined | null) => {
+      if (!p) return null;
+      const valid = ['youtube', 'vimeo', 'cloudflare', 'bunny', 'custom'];
+      return valid.includes(p) ? p : 'custom';
+    };
     
     const payload = {
       introduction: data.introduction || '',
       introduction_format: data.introduction_format || 'markdown',
       video_url: mainVideo?.url || null,
-      video_provider: mainVideo?.provider || null,
+      video_provider: sanitizeProvider(mainVideo?.provider),
       video_duration_seconds: mainVideo?.duration_seconds || null,
       pdf_url: pdfDoc?.url || null,
       pdf_title: pdfDoc?.title || null,
@@ -463,10 +468,23 @@ export default function EditCoursePage() {
         quiz: data.quiz
       })
     };
+
+    // Check if resource already exists for this topic
+    let existingId: string | null = null;
+    try {
+      const { data: existing, error: existErr } = await supabase
+        .from('topic_resources')
+        .select('id')
+        .eq('topic_id', topicId)
+        .maybeSingle();
+      if (!existErr && existing) existingId = existing.id;
+    } catch {
+      // If SELECT fails (e.g. RLS), we'll try INSERT
+    }
     
     let result;
-    if (existing) {
-      result = await supabase.from('topic_resources').update(payload).eq('id', existing.id).select().single();
+    if (existingId) {
+      result = await supabase.from('topic_resources').update(payload).eq('id', existingId).select().single();
     } else {
       result = await supabase.from('topic_resources').insert({ topic_id: topicId, unit_id: topic.unit_id, course_id: courseId, ...payload }).select().single();
     }
@@ -475,7 +493,8 @@ export default function EditCoursePage() {
       setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: result.data as TopicResources } : t) })));
       setEditingResources(null);
     } else {
-      throw new Error(result.error?.message || 'Error al guardar');
+      console.error('Error saving resources:', result.error);
+      throw new Error(result.error?.message || 'Error al guardar recursos');
     }
   };
 

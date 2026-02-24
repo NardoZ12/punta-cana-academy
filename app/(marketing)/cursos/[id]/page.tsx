@@ -11,24 +11,45 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const { id: courseId } = await params;
   const supabase = await createClient();
 
-  // Fetch del curso en el servidor - instantáneo para el usuario
-  const { data: course, error } = await supabase
-    .from('courses')
-    .select(`*, course_modules (*, course_lessons (*))`)
-    .eq('id', courseId)
-    .single();
+  // Fetch course + old modules + new units in parallel
+  const [courseResult, unitsResult] = await Promise.all([
+    supabase
+      .from('courses')
+      .select(`*, course_modules (*, course_lessons (*))`)
+      .eq('id', courseId)
+      .single(),
+    supabase
+      .from('course_units')
+      .select(`*, topics:unit_topics(id, title, order_index, is_published, estimated_minutes)`)
+      .eq('course_id', courseId)
+      .eq('is_published', true)
+      .order('order_index', { ascending: true }),
+  ]);
 
-  if (error || !course) {
+  const course = courseResult.data;
+  if (courseResult.error || !course) {
     notFound();
   }
 
-  // Ordenar módulos y lecciones en el servidor
+  // Sort old modules/lessons
   if (course.course_modules) {
     course.course_modules.sort((a: any, b: any) => a.sort_order - b.sort_order);
     course.course_modules.forEach((mod: any) => {
       if (mod.course_lessons) mod.course_lessons.sort((a: any, b: any) => a.sort_order - b.sort_order);
     });
   }
+
+  // Sort new units/topics
+  const units = (unitsResult.data || []).map((unit: any) => ({
+    ...unit,
+    topics: (unit.topics || [])
+      .filter((t: any) => t.is_published)
+      .sort((a: any, b: any) => a.order_index - b.order_index),
+  }));
+
+  // Decide which curriculum to show: prefer NEW units if they exist, fallback to OLD modules
+  const hasNewUnits = units.length > 0;
+  const hasOldModules = course.course_modules && course.course_modules.length > 0;
 
   return (
     <div className="min-h-screen bg-black text-white pb-20">
@@ -87,11 +108,41 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           </div>
           
           <div className="space-y-4">
-            {course.course_modules?.map((mod: any, index: number) => (
+            {/* NEW schema: course_units → unit_topics */}
+            {hasNewUnits && units.map((unit: any, index: number) => (
+              <div key={unit.id} className="group border border-gray-800 bg-gray-900/50 rounded-xl overflow-hidden hover:border-cyan-900/50 transition duration-300">
+                <div className="p-5 flex justify-between items-center cursor-default bg-gray-900">
+                   <h3 className="font-bold text-lg text-gray-200 group-hover:text-cyan-400 transition">
+                     <span className="text-cyan-600 mr-3 opacity-50 font-mono">{String(index + 1).padStart(2, '0')}</span> 
+                     {unit.title}
+                   </h3>
+                   {unit.topics?.length > 0 && (
+                     <span className="text-xs text-gray-500">{unit.topics.length} {unit.topics.length === 1 ? 'tema' : 'temas'}</span>
+                   )}
+                </div>
+                <div className="divide-y divide-gray-800/50">
+                  {unit.topics?.map((topic: any) => (
+                    <div key={topic.id} className="px-6 py-4 flex gap-4 items-center text-gray-400 hover:text-white hover:bg-white/5 transition text-sm">
+                      <div className="w-6 h-6 rounded-full border border-gray-700 flex items-center justify-center text-xs text-gray-600">▶</div>
+                      <span className="flex-1">{topic.title}</span>
+                      {topic.estimated_minutes && (
+                        <span className="text-xs text-gray-600">{topic.estimated_minutes} min</span>
+                      )}
+                    </div>
+                  ))}
+                  {(!unit.topics || unit.topics.length === 0) && (
+                    <div className="px-6 py-4 text-gray-600 italic text-xs">Contenido próximamente...</div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* OLD schema fallback: course_modules → course_lessons */}
+            {!hasNewUnits && hasOldModules && course.course_modules?.map((mod: any, index: number) => (
               <div key={mod.id} className="group border border-gray-800 bg-gray-900/50 rounded-xl overflow-hidden hover:border-cyan-900/50 transition duration-300">
                 <div className="p-5 flex justify-between items-center cursor-default bg-gray-900">
                    <h3 className="font-bold text-lg text-gray-200 group-hover:text-cyan-400 transition">
-                     <span className="text-cyan-600 mr-3 opacity-50 font-mono">0{index + 1}</span> 
+                     <span className="text-cyan-600 mr-3 opacity-50 font-mono">{String(index + 1).padStart(2, '0')}</span> 
                      {mod.title}
                    </h3>
                 </div>
@@ -108,6 +159,14 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
                 </div>
               </div>
             ))}
+
+            {/* No content at all */}
+            {!hasNewUnits && !hasOldModules && (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-lg">📝 Plan de estudios en preparación</p>
+                <p className="text-sm mt-2">El contenido será publicado próximamente</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

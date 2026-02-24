@@ -27,6 +27,7 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true
+    let initialSessionHandled = false
 
     // Obtener sesión inicial
     const getInitialSession = async () => {
@@ -53,9 +54,11 @@ export function useAuth() {
         } else {
           setState(prev => ({ ...prev, loading: false }))
         }
+        initialSessionHandled = true
       } catch (err) {
         console.error('Error en getInitialSession:', err)
         if (mounted) setState(prev => ({ ...prev, loading: false }))
+        initialSessionHandled = true
       }
     }
 
@@ -65,8 +68,14 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
+
+        // Skip INITIAL_SESSION — we already handle it above via getInitialSession()
+        if (event === 'INITIAL_SESSION') return
         
         if (event === 'SIGNED_IN' && session?.user) {
+          // If getInitialSession already handled this session, skip the redundant fetch
+          if (initialSessionHandled && state.user?.id === session.user.id) return
+          
           const profile = await fetchProfile(session.user.id)
           if (!mounted) return
           setState({

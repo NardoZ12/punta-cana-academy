@@ -252,13 +252,33 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (!selectedCourseId) return;
     
-    const supabase = createClient();
-    
     async function loadCourseDetails() {
-      const { data: enrollmentsData } = await supabase
-        .from('enrollments')
-        .select('student_id, progress, grade')
-        .eq('course_id', selectedCourseId);
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      const headers = {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${token}`,
+      };
+
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      let enrollmentsData: any[] | null = null;
+      try {
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/enrollments?course_id=eq.${selectedCourseId}&select=student_id,progress,grade`,
+          { headers, signal: ctrl.signal }
+        );
+        clearTimeout(t);
+        enrollmentsData = await res.json();
+      } catch (err) {
+        clearTimeout(t);
+        console.error('[loadCourseDetails] Enrollment fetch error:', err);
+        return;
+      }
 
       if (!enrollmentsData || enrollmentsData.length === 0) {
         setEnrollments([]);
@@ -266,15 +286,27 @@ export default function TeacherDashboard() {
         return;
       }
 
-      const studentIds = enrollmentsData.map(e => e.student_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .in('id', studentIds);
+      const studentIds = enrollmentsData.map((e: any) => e.student_id);
+      // Fetch profiles via direct REST
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 15000);
+      let profiles: any[] = [];
+      try {
+        const idsParam = studentIds.map((id: string) => `"${id}"`).join(',');
+        const res2 = await fetch(
+          `${supabaseUrl}/rest/v1/profiles?id=in.(${idsParam})&select=id,full_name,email`,
+          { headers, signal: ctrl2.signal }
+        );
+        clearTimeout(t2);
+        profiles = await res2.json();
+      } catch (err) {
+        clearTimeout(t2);
+        console.error('[loadCourseDetails] Profiles fetch error:', err);
+      }
 
-      const enriched = enrollmentsData.map(e => ({
+      const enriched = enrollmentsData.map((e: any) => ({
         ...e,
-        profiles: profiles?.find(p => p.id === e.student_id)
+        profiles: profiles?.find((p: any) => p.id === e.student_id)
       }));
 
       setEnrollments(enriched);
@@ -282,7 +314,7 @@ export default function TeacherDashboard() {
 
       // Calcular stats
       if (enriched.length > 0) {
-        const grades = enriched.map(e => e.grade || 0);
+        const grades = enriched.map((e: any) => e.grade || 0);
         const avg = Math.round(grades.reduce((a, b) => a + b, 0) / grades.length);
         const passed = grades.filter(g => g >= 70).length;
         const passRate = Math.round((passed / grades.length) * 100);

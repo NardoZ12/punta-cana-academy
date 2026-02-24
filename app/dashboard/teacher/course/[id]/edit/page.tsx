@@ -189,26 +189,56 @@ export default function EditCoursePage() {
 
   const fetchCourseData = async () => {
     setLoading(true);
-    const { data: course } = await supabase.from('courses').select('*').eq('id', courseId).single();
-    if (course) {
-      setCourseData({
-        id: course.id, title: course.title || '', description: course.description || '',
-        price: course.price || 0, level: course.level || 'beginner', category: course.category || '',
-        image_url: course.image_url || '', is_published: course.is_published || false,
-        max_students: course.max_students || 30, duration_hours: course.duration_hours || 10,
-        start_date: course.start_date || '', end_date: course.end_date || ''
-      });
-    }
-    const { data: unitsData } = await supabase.from('course_units')
-      .select(`*, topics:unit_topics(*, resources:topic_resources(*))`)
-      .eq('course_id', courseId).order('order_index', { ascending: true });
-    if (unitsData) {
-      const processed = unitsData.map(u => ({
-        ...u, topics: u.topics?.sort((a: any, b: any) => a.order_index - b.order_index)
-          .map((t: any) => ({ ...t, resources: t.resources?.[0] || null })) || []
-      }));
-      setUnits(processed);
-      if (processed.length > 0) setExpandedUnits(new Set([processed[0].id]));
+    try {
+      const { token, url: supabaseUrl, key: supabaseKey } = await getSupabaseHeaders();
+      const headers = {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${token}`,
+      };
+
+      // Fetch course info
+      const ctrl1 = new AbortController();
+      const t1 = setTimeout(() => ctrl1.abort(), 15000);
+      const courseRes = await fetch(
+        `${supabaseUrl}/rest/v1/courses?id=eq.${courseId}&select=*&limit=1`,
+        { headers, signal: ctrl1.signal }
+      );
+      clearTimeout(t1);
+      const courseArr = await courseRes.json();
+      const course = courseArr?.[0];
+      
+      if (course) {
+        setCourseData({
+          id: course.id, title: course.title || '', description: course.description || '',
+          price: course.price || 0, level: course.level || 'beginner', category: course.category || '',
+          image_url: course.image_url || '', is_published: course.is_published || false,
+          max_students: course.max_students || 30, duration_hours: course.duration_hours || 10,
+          start_date: course.start_date || '', end_date: course.end_date || ''
+        });
+      }
+
+      // Fetch units with topics and resources
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 15000);
+      const unitsRes = await fetch(
+        `${supabaseUrl}/rest/v1/course_units?course_id=eq.${courseId}&select=*,topics:unit_topics(*,resources:topic_resources(*))&order=order_index.asc`,
+        { headers, signal: ctrl2.signal }
+      );
+      clearTimeout(t2);
+      const unitsData = await unitsRes.json();
+      console.log('[fetchCourseData] Units:', Array.isArray(unitsData) ? unitsData.length : 'error', unitsData);
+
+      if (Array.isArray(unitsData)) {
+        const processed = unitsData.map((u: any) => ({
+          ...u, topics: (u.topics || []).sort((a: any, b: any) => a.order_index - b.order_index)
+            .map((t: any) => ({ ...t, resources: t.resources?.[0] || null }))
+        }));
+        setUnits(processed);
+        if (processed.length > 0) setExpandedUnits(new Set([processed[0].id]));
+      }
+    } catch (err: any) {
+      console.error('[fetchCourseData] Error:', err);
     }
     setLoading(false);
   };
@@ -359,15 +389,39 @@ export default function EditCoursePage() {
     if (!confirm('¿Eliminar esta unidad y todo su contenido?')) return;
     try {
       const { url, headers } = await getSupabaseHeaders();
+      // First delete all topics in this unit
+      const ctrl0 = new AbortController();
+      const t0 = setTimeout(() => ctrl0.abort(), 15000);
+      await fetch(`${url}/rest/v1/topic_resources?unit_id=eq.${unitId}`, {
+        method: 'DELETE', headers, signal: ctrl0.signal
+      });
+      clearTimeout(t0);
+
+      const ctrl1 = new AbortController();
+      const t1 = setTimeout(() => ctrl1.abort(), 15000);
+      await fetch(`${url}/rest/v1/unit_topics?unit_id=eq.${unitId}`, {
+        method: 'DELETE', headers, signal: ctrl1.signal
+      });
+      clearTimeout(t1);
+
+      // Then delete the unit
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/course_units?id=eq.${unitId}`, {
         method: 'DELETE', headers, signal: ctrl.signal
       });
       clearTimeout(t);
-      if (res.ok) setUnits(units.filter(u => u.id !== unitId));
+      console.log('[DeleteUnit] Status:', res.status);
+      if (res.ok || res.status === 204) {
+        setUnits(units.filter(u => u.id !== unitId));
+      } else {
+        const body = await res.text();
+        console.error('[DeleteUnit] Failed:', body);
+        alert('Error al eliminar unidad: ' + body);
+      }
     } catch (err: any) {
       console.error('Error deleting unit:', err);
+      alert('Error al eliminar: ' + err.message);
     }
   };
 
@@ -424,15 +478,32 @@ export default function EditCoursePage() {
     if (!confirm('¿Eliminar este tema?')) return;
     try {
       const { url, headers } = await getSupabaseHeaders();
+      // First delete resources for this topic
+      const ctrl0 = new AbortController();
+      const t0 = setTimeout(() => ctrl0.abort(), 15000);
+      await fetch(`${url}/rest/v1/topic_resources?topic_id=eq.${topicId}`, {
+        method: 'DELETE', headers, signal: ctrl0.signal
+      });
+      clearTimeout(t0);
+
+      // Then delete the topic
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topicId}`, {
         method: 'DELETE', headers, signal: ctrl.signal
       });
       clearTimeout(t);
-      if (res.ok) setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+      console.log('[DeleteTopic] Status:', res.status);
+      if (res.ok || res.status === 204) {
+        setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+      } else {
+        const body = await res.text();
+        console.error('[DeleteTopic] Failed:', body);
+        alert('Error al eliminar tema: ' + body);
+      }
     } catch (err: any) {
       console.error('Error deleting topic:', err);
+      alert('Error al eliminar: ' + err.message);
     }
   };
 

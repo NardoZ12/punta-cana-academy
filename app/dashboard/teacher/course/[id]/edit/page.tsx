@@ -866,53 +866,39 @@ export default function EditCoursePage() {
 
     let parsedResource = null;
     try {
-      const { url: sUrl, headers: sHeaders, token: sToken } = await getSupabaseHeaders();
+      const { url: sUrl, headers: sHeaders } = await getSupabaseHeaders();
 
-      // Ensure instructor_id so RLS policies work
-      try {
-        const jwt = JSON.parse(atob(sToken.split('.')[1]));
-        if (jwt?.sub) {
-          const ci = new AbortController();
-          const ti = setTimeout(() => ci.abort(), 5000);
-          await fetch(`${sUrl}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
-            method: 'PATCH', headers: { ...sHeaders, 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ instructor_id: jwt.sub }),
-            signal: ci.signal
-          });
-          clearTimeout(ti);
-        }
-      } catch { /* non-critical */ }
-
-      const resourcePayload = {
-        topic_id: topicData.id,
-        unit_id: newTopicData.unitId,
-        course_id: courseId,
-        introduction: newTopicData.introduction || ' ',
-        introduction_format: 'markdown',
-        video_url: mainVideo?.url || null,
-        video_provider: mainVideo?.url ? sanitizeVP(mainVideo?.provider) : null,
-        video_duration_seconds: mainVideo?.duration_seconds || null,
-        pdf_url: pdfDoc?.url || null,
-        pdf_title: pdfDoc?.title || null,
-        slides_url: slidesDoc?.url || null,
-        slides_provider: slidesDoc?.url ? sanitizeSP(slidesDoc?.provider) : null,
-        is_published: newTopicData.is_published ?? false,
-        additional_resources: { videos: additionalVideos || [], quiz: newTopicData.quiz || [] }
+      const rpcPayload = {
+        p_topic_id: topicData.id,
+        p_unit_id: newTopicData.unitId,
+        p_course_id: courseId,
+        p_introduction: newTopicData.introduction || ' ',
+        p_introduction_format: 'markdown',
+        p_video_url: mainVideo?.url || null,
+        p_video_provider: mainVideo?.url ? sanitizeVP(mainVideo?.provider) : null,
+        p_video_duration_seconds: mainVideo?.duration_seconds || null,
+        p_pdf_url: pdfDoc?.url || null,
+        p_pdf_title: pdfDoc?.title || null,
+        p_slides_url: slidesDoc?.url || null,
+        p_slides_provider: slidesDoc?.url ? sanitizeSP(slidesDoc?.provider) : null,
+        p_is_published: newTopicData.is_published ?? false,
+        p_additional_resources: { videos: additionalVideos || [], quiz: newTopicData.quiz || [] }
       };
       const ctrlR = new AbortController();
       const tR = setTimeout(() => ctrlR.abort(), 15000);
-      const resInsert = await fetch(`${sUrl}/rest/v1/topic_resources`, {
+      const resInsert = await fetch(`${sUrl}/rest/v1/rpc/upsert_topic_resource`, {
         method: 'POST',
-        headers: { ...sHeaders, 'Prefer': 'return=representation' },
-        body: JSON.stringify(resourcePayload),
+        headers: sHeaders,
+        body: JSON.stringify(rpcPayload),
         signal: ctrlR.signal,
       });
       clearTimeout(tR);
-      const resBody = await resInsert.json();
+      const resBody = await resInsert.text();
+      console.log('[CreateTopic] RPC response:', resInsert.status, resBody.substring(0, 200));
       if (!resInsert.ok) {
-        console.error('[CreateTopic] Resource insert error:', resInsert.status, resBody);
+        console.error('[CreateTopic] Resource RPC error:', resInsert.status, resBody);
       } else {
-        parsedResource = resBody?.[0] || resBody;
+        try { parsedResource = JSON.parse(resBody); } catch {}
       }
     } catch (resErr: any) {
       console.error('[CreateTopic] Resource insert error:', resErr);
@@ -996,60 +982,52 @@ export default function EditCoursePage() {
       console.log('[SaveResources] Payload pdf_url:', payload.pdf_url, '| slides_url:', payload.slides_url, '| slides_provider:', payload.slides_provider);
       console.log('[SaveResources] Documents array:', JSON.stringify(data.documents));
 
-      // === Save topic_resources: PATCH first, then POST if no row exists ===
+      // === Save topic_resources via RPC (SECURITY DEFINER bypasses RLS) ===
       let savedResource: any = null;
 
-      // Step 1: Try PATCH (updates existing row if any)
-      const ctrlPatch = new AbortController();
-      const tPatch = setTimeout(() => ctrlPatch.abort(), 15000);
-      const patchRes = await fetch(
-        `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}`,
+      const rpcPayload = {
+        p_topic_id: payload.topic_id,
+        p_unit_id: payload.unit_id,
+        p_course_id: payload.course_id,
+        p_introduction: payload.introduction,
+        p_introduction_format: payload.introduction_format,
+        p_video_url: payload.video_url,
+        p_video_provider: payload.video_provider,
+        p_video_duration_seconds: payload.video_duration_seconds,
+        p_pdf_url: payload.pdf_url,
+        p_pdf_title: payload.pdf_title,
+        p_slides_url: payload.slides_url,
+        p_slides_provider: payload.slides_provider,
+        p_is_published: payload.is_published,
+        p_additional_resources: payload.additional_resources,
+      };
+
+      console.log('[SaveResources] Calling RPC upsert_topic_resource...');
+      const ctrlRpc = new AbortController();
+      const tRpc = setTimeout(() => ctrlRpc.abort(), 15000);
+      const rpcRes = await fetch(
+        `${supabaseUrl}/rest/v1/rpc/upsert_topic_resource`,
         {
-          method: 'PATCH',
-          headers: { ...headers, 'Prefer': 'return=representation' },
-          body: JSON.stringify(payload),
-          signal: ctrlPatch.signal,
+          method: 'POST',
+          headers,
+          body: JSON.stringify(rpcPayload),
+          signal: ctrlRpc.signal,
         }
       );
-      clearTimeout(tPatch);
-      const patchBody = await patchRes.text();
-      console.log('[SaveResources] PATCH response:', patchRes.status, patchBody.substring(0, 200));
+      clearTimeout(tRpc);
+      const rpcBody = await rpcRes.text();
+      console.log('[SaveResources] RPC response:', rpcRes.status, rpcBody.substring(0, 300));
 
-      if (patchRes.ok) {
-        try {
-          const parsed = JSON.parse(patchBody);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            savedResource = parsed[0];
-            console.log('[SaveResources] PATCH updated existing row:', savedResource.id);
-          }
-        } catch { /* empty response means no matching row */ }
+      if (!rpcRes.ok) {
+        throw new Error(`Error ${rpcRes.status}: ${rpcBody}`);
       }
 
-      // Step 2: If PATCH didn't match a row, INSERT new
-      if (!savedResource) {
-        console.log('[SaveResources] No existing row, inserting new...');
-        const ctrlPost = new AbortController();
-        const tPost = setTimeout(() => ctrlPost.abort(), 15000);
-        const postRes = await fetch(
-          `${supabaseUrl}/rest/v1/topic_resources`,
-          {
-            method: 'POST',
-            headers: { ...headers, 'Prefer': 'return=representation' },
-            body: JSON.stringify(payload),
-            signal: ctrlPost.signal,
-          }
-        );
-        clearTimeout(tPost);
-        const postBody = await postRes.text();
-        console.log('[SaveResources] POST response:', postRes.status, postBody.substring(0, 200));
-
-        if (!postRes.ok) {
-          throw new Error(`Error ${postRes.status}: ${postBody}`);
-        }
-        try {
-          const parsed = JSON.parse(postBody);
-          savedResource = Array.isArray(parsed) ? parsed[0] : parsed;
-        } catch { /* parse error */ }
+      try {
+        const parsed = JSON.parse(rpcBody);
+        savedResource = parsed;
+        console.log('[SaveResources] RPC success, resource id:', savedResource?.id);
+      } catch {
+        console.warn('[SaveResources] Could not parse RPC response, but save succeeded');
       }
 
       console.log('[SaveResources] Saved resource id:', savedResource?.id);

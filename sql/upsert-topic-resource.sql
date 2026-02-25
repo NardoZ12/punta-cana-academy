@@ -1,71 +1,56 @@
 -- ============================================================
--- FUNCIÓN UPSERT PARA TOPIC_RESOURCES
--- Usa SECURITY DEFINER para bypassear RLS (que bloquea PATCH/POST directo)
--- Pero verifica internamente que el usuario sea instructor del curso.
--- ============================================================
-
+-- FUNCIÓN UPSERT PARA TOPIC_RESOURCES (v3 - a prueba de balas)
 -- Ejecutar en Supabase SQL Editor
+-- ============================================================
 
 -- ============================================================
--- PASO 0: Asegurar que existen TODAS las columnas necesarias
--- (CREATE TABLE IF NOT EXISTS NO agrega columnas nuevas a tablas existentes)
+-- PASO 0: Agregar columnas faltantes UNA POR UNA (sin DO block)
+-- Si alguna ya existe, PostgreSQL la ignora con IF NOT EXISTS
 -- ============================================================
-DO $$ BEGIN
-  -- Columnas de video
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS video_url TEXT;
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS video_provider TEXT;
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS video_duration_seconds INTEGER;
-  
-  -- Columnas de PDF
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS pdf_url TEXT;
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS pdf_title TEXT;
-  
-  -- Columnas de SLIDES (probablemente las que faltan)
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS slides_url TEXT;
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS slides_provider TEXT;
-  
-  -- Otras columnas necesarias
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS introduction TEXT DEFAULT ' ';
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS introduction_format TEXT DEFAULT 'markdown';
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS additional_resources JSONB DEFAULT '{}'::jsonb;
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
-  ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-  
-  RAISE NOTICE 'Columnas verificadas/agregadas exitosamente';
-EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'Error al verificar columnas: %', SQLERRM;
-END $$;
 
--- Asegurar CHECK constraint en slides_provider (si la columna existía sin constraint)
-DO $$ BEGIN
-  ALTER TABLE public.topic_resources DROP CONSTRAINT IF EXISTS topic_resources_slides_provider_check;
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS video_url TEXT;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS video_provider TEXT;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS video_duration_seconds INTEGER;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS pdf_url TEXT;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS pdf_title TEXT;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS slides_url TEXT;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS slides_provider TEXT;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS introduction TEXT DEFAULT ' ';
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS introduction_format TEXT DEFAULT 'markdown';
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS additional_resources JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT false;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS unit_id UUID;
+ALTER TABLE public.topic_resources ADD COLUMN IF NOT EXISTS course_id UUID;
 
-DO $$ BEGIN
-  ALTER TABLE public.topic_resources 
-    ADD CONSTRAINT topic_resources_slides_provider_check 
-    CHECK (slides_provider IS NULL OR slides_provider IN ('google_slides', 'canva', 'pdf', 'custom'));
-EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'CHECK constraint ya existe o no se pudo crear: %', SQLERRM;
-END $$;
+-- ============================================================
+-- PASO 0b: CHECK constraints (borrar y recrear)
+-- ============================================================
+ALTER TABLE public.topic_resources DROP CONSTRAINT IF EXISTS topic_resources_slides_provider_check;
+ALTER TABLE public.topic_resources 
+  ADD CONSTRAINT topic_resources_slides_provider_check 
+  CHECK (slides_provider IS NULL OR slides_provider IN ('google_slides', 'canva', 'pdf', 'custom'));
 
--- Asegurar UNIQUE constraint en topic_id
-DO $$ BEGIN
-  ALTER TABLE public.topic_resources DROP CONSTRAINT IF EXISTS one_resource_per_topic;
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
+ALTER TABLE public.topic_resources DROP CONSTRAINT IF EXISTS topic_resources_video_provider_check;
+ALTER TABLE public.topic_resources 
+  ADD CONSTRAINT topic_resources_video_provider_check 
+  CHECK (video_provider IS NULL OR video_provider IN ('youtube', 'vimeo', 'cloudflare', 'bunny', 'custom'));
 
-DO $$ BEGIN  
-  ALTER TABLE public.topic_resources 
-    ADD CONSTRAINT one_resource_per_topic UNIQUE (topic_id);
-EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'UNIQUE constraint ya existe: %', SQLERRM;
+ALTER TABLE public.topic_resources DROP CONSTRAINT IF EXISTS topic_resources_introduction_format_check;
+ALTER TABLE public.topic_resources 
+  ADD CONSTRAINT topic_resources_introduction_format_check 
+  CHECK (introduction_format IS NULL OR introduction_format IN ('markdown', 'html', 'plain'));
+
+-- UNIQUE constraint
+DO $$ BEGIN
+  ALTER TABLE public.topic_resources ADD CONSTRAINT one_resource_per_topic UNIQUE (topic_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- ============================================================
--- PASO 1: Crear la función RPC
+-- PASO 1: Borrar TODA función vieja con ese nombre y recrear
 -- ============================================================
+DROP FUNCTION IF EXISTS public.upsert_topic_resource(UUID, UUID, UUID, TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT, TEXT, BOOLEAN, JSONB);
 
 CREATE OR REPLACE FUNCTION public.upsert_topic_resource(
   p_topic_id UUID,
@@ -93,23 +78,19 @@ DECLARE
 BEGIN
   v_user_id := auth.uid();
   
-  -- Verificar que el usuario es instructor del curso
   IF NOT EXISTS (
     SELECT 1 FROM courses WHERE id = p_course_id AND instructor_id = v_user_id
   ) THEN
-    -- Auto-asignar instructor_id si es NULL
     UPDATE courses SET instructor_id = v_user_id 
     WHERE id = p_course_id AND instructor_id IS NULL;
     
-    -- Re-verificar
     IF NOT EXISTS (
       SELECT 1 FROM courses WHERE id = p_course_id AND instructor_id = v_user_id
     ) THEN
-      RAISE EXCEPTION 'No autorizado: no eres el instructor de este curso';
+      RAISE EXCEPTION 'No autorizado: no eres el instructor de este curso (user=%, course=%)', v_user_id, p_course_id;
     END IF;
   END IF;
 
-  -- UPSERT: INSERT o UPDATE en una sola operación atómica
   INSERT INTO topic_resources (
     topic_id, unit_id, course_id,
     introduction, introduction_format,
@@ -146,32 +127,36 @@ BEGIN
 END;
 $$;
 
--- Permitir que usuarios autenticados llamen esta función
 GRANT EXECUTE ON FUNCTION public.upsert_topic_resource TO authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_topic_resource TO anon;
 
 -- ============================================================
--- PASO 2: Asegurar RLS policies para que estudiantes vean recursos
+-- PASO 2: RLS policies
 -- ============================================================
 ALTER TABLE public.topic_resources ENABLE ROW LEVEL SECURITY;
 
--- Los estudiantes inscritos y el instructor pueden VER recursos
 DROP POLICY IF EXISTS "View resources" ON public.topic_resources;
 CREATE POLICY "View resources" ON public.topic_resources FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.courses WHERE id = topic_resources.course_id AND instructor_id = auth.uid())
     OR EXISTS (SELECT 1 FROM public.enrollments WHERE course_id = topic_resources.course_id AND student_id = auth.uid())
 );
 
--- El instructor puede gestionar recursos (INSERT/UPDATE/DELETE) 
--- Nota: usamos SECURITY DEFINER function para bypasear esto, pero lo dejamos por si acaso
 DROP POLICY IF EXISTS "Manage resources" ON public.topic_resources;
 CREATE POLICY "Manage resources" ON public.topic_resources FOR ALL USING (
     EXISTS (SELECT 1 FROM public.courses WHERE id = topic_resources.course_id AND instructor_id = auth.uid())
 );
 
 -- ============================================================
--- VERIFICACIÓN: Mostrar las columnas actuales de topic_resources
+-- VERIFICACIÓN: Debe mostrar slides_url y slides_provider
 -- ============================================================
-SELECT column_name, data_type, is_nullable, column_default 
+SELECT column_name, data_type, is_nullable
 FROM information_schema.columns 
 WHERE table_name = 'topic_resources' AND table_schema = 'public'
 ORDER BY ordinal_position;
+
+-- ============================================================
+-- TEST: Verificar que la función existe
+-- ============================================================
+SELECT routine_name, routine_type 
+FROM information_schema.routines 
+WHERE routine_name = 'upsert_topic_resource' AND routine_schema = 'public';

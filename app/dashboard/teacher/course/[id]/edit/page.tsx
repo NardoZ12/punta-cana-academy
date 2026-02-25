@@ -1003,37 +1003,80 @@ export default function EditCoursePage() {
       };
 
       console.log('[SaveResources] Calling RPC upsert_topic_resource...');
+      console.log('[SaveResources] RPC payload slides:', rpcPayload.p_slides_url, rpcPayload.p_slides_provider);
       const ctrlRpc = new AbortController();
       const tRpc = setTimeout(() => ctrlRpc.abort(), 15000);
       const rpcRes = await fetch(
         `${supabaseUrl}/rest/v1/rpc/upsert_topic_resource`,
         {
           method: 'POST',
-          headers,
+          headers: { ...headers, 'Prefer': '' },
           body: JSON.stringify(rpcPayload),
           signal: ctrlRpc.signal,
         }
       );
       clearTimeout(tRpc);
       const rpcBody = await rpcRes.text();
-      console.log('[SaveResources] RPC response:', rpcRes.status, rpcBody.substring(0, 300));
+      console.log('[SaveResources] RPC response:', rpcRes.status, rpcBody.substring(0, 500));
 
       if (!rpcRes.ok) {
-        let errorMsg = `Error ${rpcRes.status}`;
+        // If RPC doesn't exist (404) or fails, fallback to direct PATCH+POST
+        console.warn('[SaveResources] RPC failed, falling back to direct REST. Status:', rpcRes.status);
+        
+        // Fallback: Try PATCH first
+        const ctrlFB = new AbortController();
+        const tFB = setTimeout(() => ctrlFB.abort(), 15000);
+        const fbRes = await fetch(
+          `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}`,
+          {
+            method: 'PATCH',
+            headers: { ...headers, 'Prefer': 'return=representation' },
+            body: JSON.stringify(payload),
+            signal: ctrlFB.signal,
+          }
+        );
+        clearTimeout(tFB);
+        const fbBody = await fbRes.text();
+        console.log('[SaveResources] Fallback PATCH:', fbRes.status, fbBody.substring(0, 300));
+        
+        let fbParsed: any = null;
+        try { fbParsed = JSON.parse(fbBody); } catch {}
+        
+        if (fbRes.ok && Array.isArray(fbParsed) && fbParsed.length > 0) {
+          savedResource = fbParsed[0];
+        } else {
+          // POST if no row exists
+          const ctrlFB2 = new AbortController();
+          const tFB2 = setTimeout(() => ctrlFB2.abort(), 15000);
+          const fbRes2 = await fetch(
+            `${supabaseUrl}/rest/v1/topic_resources`,
+            {
+              method: 'POST',
+              headers: { ...headers, 'Prefer': 'return=representation' },
+              body: JSON.stringify(payload),
+              signal: ctrlFB2.signal,
+            }
+          );
+          clearTimeout(tFB2);
+          const fbBody2 = await fbRes2.text();
+          console.log('[SaveResources] Fallback POST:', fbRes2.status, fbBody2.substring(0, 300));
+          
+          if (!fbRes2.ok) {
+            throw new Error(`Error al guardar: ${fbBody2}`);
+          }
+          try {
+            const p2 = JSON.parse(fbBody2);
+            savedResource = Array.isArray(p2) ? p2[0] : p2;
+          } catch {}
+        }
+      } else {
         try {
-          const errJson = JSON.parse(rpcBody);
-          errorMsg = errJson?.message || errJson?.error || rpcBody;
-        } catch { errorMsg = rpcBody; }
-        console.error('[SaveResources] RPC error details:', rpcBody);
-        throw new Error(errorMsg);
-      }
-
-      try {
-        const parsed = JSON.parse(rpcBody);
-        savedResource = parsed;
-        console.log('[SaveResources] RPC success, resource id:', savedResource?.id);
-      } catch {
-        console.warn('[SaveResources] Could not parse RPC response, but save succeeded');
+          const parsed = JSON.parse(rpcBody);
+          savedResource = parsed;
+          console.log('[SaveResources] RPC success, slides_url in result:', savedResource?.slides_url);
+        } catch {
+          console.warn('[SaveResources] Could not parse RPC response');
+        }
       }
 
       console.log('[SaveResources] Saved resource id:', savedResource?.id);

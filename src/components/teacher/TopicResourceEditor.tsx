@@ -482,11 +482,16 @@ export default function TopicResourceEditor({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(data);
+      // Wrap onSave in a global timeout so UI never gets stuck forever
+      const savePromise = onSave(data);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('El guardado tardó demasiado (20s). Intenta de nuevo o recarga la página.')), 20000)
+      );
+      await Promise.race([savePromise, timeoutPromise]);
       setHasChanges(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving:', error);
-      alert('Error al guardar los recursos');
+      alert(error?.message || 'Error al guardar los recursos');
     } finally {
       setSaving(false);
     }

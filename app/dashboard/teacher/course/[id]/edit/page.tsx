@@ -248,12 +248,15 @@ export default function EditCoursePage() {
     setSaving(true);
     console.log('[SaveCourse] Saving course:', courseId);
     try {
-      const { url, headers } = await getSupabaseHeaders();
+      const { url, headers, token: authToken } = await getSupabaseHeaders();
       console.log('[SaveCourse] Got headers, patching...');
 
-      // Assign instructor_id if null
-      const session = await supabase.auth.getSession();
-      const userId = session?.data?.session?.user?.id;
+      // Assign instructor_id if null (extract user ID from JWT)
+      let userId = '';
+      try {
+        const payload = JSON.parse(atob(authToken.split('.')[1]));
+        userId = payload?.sub || '';
+      } catch { /* skip */ }
       if (userId) {
         const ctrl0 = new AbortController();
         const t0 = setTimeout(() => ctrl0.abort(), 15000);
@@ -365,18 +368,69 @@ export default function EditCoursePage() {
     setUploading(false);
   };
 
-  // Helper: get auth headers for direct fetch
+  // Helper: get auth headers for direct fetch (with timeout protection)
   const getSupabaseHeaders = async () => {
-    // Try getSession first, if no token try refreshing
-    let session = (await supabase.auth.getSession()).data?.session;
-    if (!session?.access_token) {
-      console.warn('[getSupabaseHeaders] No session, attempting refresh...');
-      const { data } = await supabase.auth.refreshSession();
-      session = data?.session || null;
-    }
-    const token = session?.access_token;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL no está configurada');
+    if (!key) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY no está configurada');
+
+    let token = '';
+
+    // Try getSession with 5s timeout (supabase-js can hang)
+    try {
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('getSession timeout')), 5000)
+      );
+      const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
+      token = result?.data?.session?.access_token || '';
+    } catch (e) {
+      console.warn('[getSupabaseHeaders] getSession failed/timed out:', e);
+    }
+
+    // Fallback: try refreshSession with 5s timeout
+    if (!token) {
+      try {
+        console.warn('[getSupabaseHeaders] No token from getSession, trying refresh...');
+        const refreshPromise = supabase.auth.refreshSession();
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('refreshSession timeout')), 5000)
+        );
+        const result = await Promise.race([refreshPromise, timeoutPromise]) as any;
+        token = result?.data?.session?.access_token || '';
+      } catch (e) {
+        console.warn('[getSupabaseHeaders] refreshSession failed/timed out:', e);
+      }
+    }
+
+    // Last resort: read token from sb-* cookies directly
+    if (!token && typeof document !== 'undefined') {
+      try {
+        const cookies = document.cookie.split(';').map(c => c.trim());
+        // supabase-ssr stores session in sb-<ref>-auth-token cookies (may be chunked)
+        const sbCookies = cookies
+          .filter(c => c.startsWith('sb-') && c.includes('-auth-token'))
+          .sort()
+          .map(c => c.substring(c.indexOf('=') + 1));
+        if (sbCookies.length > 0) {
+          const raw = decodeURIComponent(sbCookies.join(''));
+          try {
+            const parsed = JSON.parse(raw);
+            token = parsed?.access_token || '';
+            console.log('[getSupabaseHeaders] Got token from cookie fallback');
+          } catch {
+            // Try base64 decode
+            try {
+              const decoded = JSON.parse(atob(raw));
+              token = decoded?.access_token || '';
+            } catch { /* skip */ }
+          }
+        }
+      } catch (e) {
+        console.warn('[getSupabaseHeaders] Cookie fallback failed:', e);
+      }
+    }
     
     console.log('[getSupabaseHeaders] token:', token ? token.substring(0, 20) + '...' : 'NULL', 'url:', url ? 'YES' : 'NO', 'key:', key ? 'YES' : 'NO');
     
@@ -384,8 +438,6 @@ export default function EditCoursePage() {
       alert('❌ Tu sesión ha expirado. Por favor recarga la página e inicia sesión de nuevo.');
       throw new Error('No hay sesión activa. Por favor inicia sesión de nuevo.');
     }
-    if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL no está configurada');
-    if (!key) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY no está configurada');
     
     return { token, url, key, headers: {
       'Content-Type': 'application/json',

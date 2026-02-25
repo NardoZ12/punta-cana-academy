@@ -16,7 +16,8 @@ interface SupabaseHeaders {
 
 /**
  * Get Supabase auth headers for direct REST calls.
- * Tries to refresh session if no token found.
+ * Wraps getSession/refreshSession in 5s timeouts to prevent hangs.
+ * Falls back to reading cookies directly if supabase-js hangs.
  */
 export async function getSupabaseHeaders(): Promise<SupabaseHeaders> {
   const supabase = createClient()
@@ -25,12 +26,50 @@ export async function getSupabaseHeaders(): Promise<SupabaseHeaders> {
   
   let token = ''
   
-  const { data: { session } } = await supabase.auth.getSession()
-  token = session?.access_token || ''
+  // Try getSession with 5s timeout
+  try {
+    const sessionPromise = supabase.auth.getSession()
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('getSession timeout')), 5000)
+    )
+    const result = await Promise.race([sessionPromise, timeoutPromise]) as any
+    token = result?.data?.session?.access_token || ''
+  } catch (e) {
+    console.warn('[getSupabaseHeaders] getSession failed/timed out:', e)
+  }
   
+  // Fallback: refreshSession with 5s timeout
   if (!token) {
-    const { data: { session: refreshed } } = await supabase.auth.refreshSession()
-    token = refreshed?.access_token || ''
+    try {
+      const refreshPromise = supabase.auth.refreshSession()
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('refreshSession timeout')), 5000)
+      )
+      const result = await Promise.race([refreshPromise, timeoutPromise]) as any
+      token = result?.data?.session?.access_token || ''
+    } catch (e) {
+      console.warn('[getSupabaseHeaders] refreshSession failed/timed out:', e)
+    }
+  }
+
+  // Last resort: read from sb-* cookies directly
+  if (!token && typeof document !== 'undefined') {
+    try {
+      const cookies = document.cookie.split(';').map(c => c.trim())
+      const sbCookies = cookies
+        .filter(c => c.startsWith('sb-') && c.includes('-auth-token'))
+        .sort()
+        .map(c => c.substring(c.indexOf('=') + 1))
+      if (sbCookies.length > 0) {
+        const raw = decodeURIComponent(sbCookies.join(''))
+        try {
+          const parsed = JSON.parse(raw)
+          token = parsed?.access_token || ''
+        } catch {
+          try { token = JSON.parse(atob(raw))?.access_token || '' } catch { /* skip */ }
+        }
+      }
+    } catch { /* skip */ }
   }
   
   if (!token || !url || !key) {

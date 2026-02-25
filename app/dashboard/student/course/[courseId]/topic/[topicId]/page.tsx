@@ -619,10 +619,15 @@ export default function StudentTopicPage() {
             {topic.resources.slides_provider === 'google_slides' || topic.resources.slides_url.includes('docs.google.com') ? (
               <div className="mb-4 rounded-xl overflow-hidden border border-gray-800 bg-gray-900">
                 <iframe
-                  src={topic.resources.slides_url.includes('/embed') 
-                    ? topic.resources.slides_url 
-                    : topic.resources.slides_url.replace('/pub', '/embed').replace('/edit', '/embed')
-                  }
+                  src={(() => {
+                    const url = topic.resources.slides_url!;
+                    if (url.includes('/embed')) return url;
+                    // Extract presentation ID and build proper embed URL
+                    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                    if (match) return `https://docs.google.com/presentation/d/${match[1]}/embed?start=false&loop=false&delayms=3000`;
+                    // Fallback: replace /edit or /pub with /embed
+                    return url.replace(/\/(edit|pub).*$/, '/embed?start=false&loop=false&delayms=3000');
+                  })()}
                   className="w-full h-[400px] sm:h-[500px]"
                   allowFullScreen
                   title="Presentación"

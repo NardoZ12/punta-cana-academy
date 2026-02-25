@@ -1019,7 +1019,13 @@ export default function EditCoursePage() {
       console.log('[SaveResources] RPC response:', rpcRes.status, rpcBody.substring(0, 300));
 
       if (!rpcRes.ok) {
-        throw new Error(`Error ${rpcRes.status}: ${rpcBody}`);
+        let errorMsg = `Error ${rpcRes.status}`;
+        try {
+          const errJson = JSON.parse(rpcBody);
+          errorMsg = errJson?.message || errJson?.error || rpcBody;
+        } catch { errorMsg = rpcBody; }
+        console.error('[SaveResources] RPC error details:', rpcBody);
+        throw new Error(errorMsg);
       }
 
       try {

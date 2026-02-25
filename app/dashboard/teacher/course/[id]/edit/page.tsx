@@ -80,7 +80,7 @@ interface TopicResources {
   slides_url: string;
   slides_provider: string;
   is_published: boolean;
-  additional_resources?: string;
+  additional_resources?: string | { videos?: Array<{ id?: string; url: string; title?: string; provider?: string; embedUrl?: string | null; duration_seconds?: number }>; quiz?: any[] };
 }
 
 // Estado para crear tema con recursos
@@ -1282,7 +1282,17 @@ export default function EditCoursePage() {
                                   <span className="text-white text-sm truncate">{topic.title}</span>
                                   {topic.resources && (
                                     <div className="flex items-center gap-1">
-                                      {topic.resources.video_url && <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded text-xs">Video</span>}
+                                      {topic.resources.video_url && (() => {
+                                        let extraCount = 0;
+                                        try {
+                                          const ar = topic.resources!.additional_resources;
+                                          const parsed = ar ? (typeof ar === 'string' ? JSON.parse(ar) : ar) : {};
+                                          extraCount = (parsed.videos || []).length;
+                                        } catch { /* ignore */ }
+                                        return <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded text-xs">
+                                          {extraCount > 0 ? `${1 + extraCount} Videos` : 'Video'}
+                                        </span>;
+                                      })()}
                                       {topic.resources.pdf_url && <span className="bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded text-xs">PDF</span>}
                                       {topic.resources.slides_url && <span className="bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded text-xs">Slides</span>}
                                     </div>
@@ -1482,33 +1492,57 @@ export default function EditCoursePage() {
           topicTitle={editingResources.topic.title}
           unitId={editingResources.topic.unit_id}
           courseId={courseId}
-          initialData={{
-            introduction: editingResources.resources.introduction || '',
-            introduction_format: (editingResources.resources.introduction_format as 'markdown' | 'html' | 'plain') || 'markdown',
-            videos: editingResources.resources.video_url ? [{
+          initialData={(() => {
+            // Parse additional_resources (can be string or object from JSONB)
+            let extras: { videos?: any[]; quiz?: any[] } = {};
+            try {
+              const raw = editingResources.resources.additional_resources;
+              if (raw) {
+                extras = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              }
+            } catch { /* ignore parse errors */ }
+
+            // Build main video
+            const mainVideos = editingResources.resources.video_url ? [{
               id: 'main',
               url: editingResources.resources.video_url,
               title: 'Video principal',
               provider: (editingResources.resources.video_provider as 'youtube' | 'vimeo' | 'unknown') || 'youtube',
               embedUrl: getVideoInfo(editingResources.resources.video_url || '').embedUrl,
               duration_seconds: editingResources.resources.video_duration_seconds
-            }] : [],
-            documents: [
-              editingResources.resources.pdf_url ? {
-                type: 'pdf' as const,
-                url: editingResources.resources.pdf_url,
-                title: editingResources.resources.pdf_title || ''
-              } : null,
-              editingResources.resources.slides_url ? {
-                type: 'slides' as const,
-                url: editingResources.resources.slides_url,
-                title: '',
-                provider: (editingResources.resources.slides_provider as 'google_slides' | 'canva' | 'pdf' | 'custom') || 'google_slides'
-              } : null
-            ].filter(Boolean) as any[],
-            quiz: [],
-            is_published: editingResources.resources.is_published || false
-          }}
+            }] : [];
+
+            // Restore additional videos from additional_resources
+            const extraVideos = (extras.videos || []).map((v: any, i: number) => ({
+              id: v.id || `extra_${i}`,
+              url: v.url || '',
+              title: v.title || `Video ${mainVideos.length + i + 1}`,
+              provider: (v.provider as 'youtube' | 'vimeo' | 'unknown') || 'youtube',
+              embedUrl: v.url ? getVideoInfo(v.url).embedUrl : null,
+              duration_seconds: v.duration_seconds || 0
+            }));
+
+            return {
+              introduction: editingResources.resources.introduction || '',
+              introduction_format: (editingResources.resources.introduction_format as 'markdown' | 'html' | 'plain') || 'markdown',
+              videos: [...mainVideos, ...extraVideos],
+              documents: [
+                editingResources.resources.pdf_url ? {
+                  type: 'pdf' as const,
+                  url: editingResources.resources.pdf_url,
+                  title: editingResources.resources.pdf_title || ''
+                } : null,
+                editingResources.resources.slides_url ? {
+                  type: 'slides' as const,
+                  url: editingResources.resources.slides_url,
+                  title: '',
+                  provider: (editingResources.resources.slides_provider as 'google_slides' | 'canva' | 'pdf' | 'custom') || 'google_slides'
+                } : null
+              ].filter(Boolean) as any[],
+              quiz: extras.quiz || [],
+              is_published: editingResources.resources.is_published || false
+            };
+          })()}
           onSave={(data) => handleSaveResources(editingResources.topic.id, data)}
           onClose={() => setEditingResources(null)}
         />

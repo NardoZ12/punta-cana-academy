@@ -254,7 +254,12 @@ export default function EditCoursePage() {
       if (Array.isArray(unitsData)) {
         const processed = unitsData.map((u: any) => ({
           ...u, topics: (u.topics || []).sort((a: any, b: any) => a.order_index - b.order_index)
-            .map((t: any) => ({ ...t, resources: t.resources?.[0] || null }))
+            .map((t: any) => {
+              // PostgREST returns resources as object (not array) when topic_id has UNIQUE constraint
+              const res = t.resources;
+              const topicResources = Array.isArray(res) ? (res[0] || null) : (res || null);
+              return { ...t, resources: topicResources };
+            })
         }));
         setUnits(processed);
         if (processed.length > 0) setExpandedUnits(new Set([processed[0].id]));

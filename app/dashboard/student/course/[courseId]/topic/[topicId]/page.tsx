@@ -43,7 +43,7 @@ interface TopicData {
     pdf_title: string | null;
     slides_url: string | null;
     slides_provider: string | null;
-    additional_resources: any[];
+    additional_resources: any;
   } | null;
   unit_title?: string;
   course_title?: string;
@@ -442,12 +442,20 @@ export default function StudentTopicPage() {
             <Clock className="w-4 h-4" />
             {topic.estimated_minutes || 30} min
           </span>
-          {topic.resources?.video_url && (
-            <span className="flex items-center gap-1.5">
-              <Video className="w-4 h-4" />
-              Video
-            </span>
-          )}
+          {topic.resources?.video_url && (() => {
+            let extraCount = 0;
+            try {
+              const ar = topic.resources!.additional_resources;
+              const parsed = ar ? (typeof ar === 'string' ? JSON.parse(ar) : ar) : {};
+              extraCount = (parsed.videos || []).length;
+            } catch { /* ignore */ }
+            return (
+              <span className="flex items-center gap-1.5">
+                <Video className="w-4 h-4" />
+                {extraCount > 0 ? `${1 + extraCount} Videos` : 'Video'}
+              </span>
+            );
+          })()}
           {topic.resources?.pdf_url && (
             <span className="flex items-center gap-1.5">
               <FileText className="w-4 h-4" />
@@ -653,36 +661,45 @@ export default function StudentTopicPage() {
           </div>
         )}
 
-        {/* === ADDITIONAL RESOURCES === */}
-        {topic.resources?.additional_resources && topic.resources.additional_resources.length > 0 && (
-          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-400" />
-              Recursos Adicionales
-            </h2>
-            <div className="space-y-3">
-              {topic.resources.additional_resources.map((resource: any, i: number) => (
-                <a
-                  key={i}
-                  href={resource.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 hover:border-blue-500/30 transition-colors"
-                >
-                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                    <ExternalLink className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-white text-sm truncate">{resource.title || resource.url}</p>
-                    {resource.description && (
-                      <p className="text-xs text-gray-500 truncate">{resource.description}</p>
+        {/* === ADDITIONAL VIDEOS === */}
+        {(() => {
+          // additional_resources is JSONB: { videos: [...], quiz: [...] } or may be a string
+          const ar = topic.resources?.additional_resources;
+          if (!ar) return null;
+          let parsed: { videos?: any[]; quiz?: any[] } = {};
+          try { parsed = typeof ar === 'string' ? JSON.parse(ar) : ar; } catch { /* ignore */ }
+          const extraVideos = parsed?.videos || [];
+          if (extraVideos.length === 0) return null;
+          return (
+            <div className="space-y-6 mb-6">
+              {extraVideos.map((vid: any, i: number) => {
+                const info = vid.url ? getVideoInfo(vid.url) : null;
+                if (!info?.embedUrl) return null;
+                return (
+                  <div key={i} className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6">
+                    <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Video className="w-5 h-5 text-purple-400" />
+                      {vid.title || `Video ${i + 2}`}
+                    </h2>
+                    <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-900">
+                      <iframe
+                        src={info.embedUrl}
+                        className="absolute inset-0 w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                    {vid.duration_seconds && vid.duration_seconds > 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Duración: {Math.floor(vid.duration_seconds / 60)}:{String(vid.duration_seconds % 60).padStart(2, '0')} min
+                      </p>
                     )}
                   </div>
-                </a>
-              ))}
+                );
+              })}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* === QUIZ SECTION === */}
         {quiz && quiz.questions.length > 0 && (

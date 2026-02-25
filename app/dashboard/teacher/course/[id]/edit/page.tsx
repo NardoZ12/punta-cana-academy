@@ -217,6 +217,27 @@ export default function EditCoursePage() {
           max_students: course.max_students || 30, duration_hours: course.duration_hours || 10,
           start_date: course.start_date || '', end_date: course.end_date || ''
         });
+
+        // Auto-assign instructor_id if NULL (needed for RLS policies)
+        if (!course.instructor_id) {
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const userId = payload?.sub || '';
+            if (userId) {
+              console.log('[fetchCourseData] Assigning instructor_id:', userId);
+              const ctrlFix = new AbortController();
+              const tFix = setTimeout(() => ctrlFix.abort(), 10000);
+              await fetch(`${supabaseUrl}/rest/v1/courses?id=eq.${courseId}`, {
+                method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
+                body: JSON.stringify({ instructor_id: userId }),
+                signal: ctrlFix.signal
+              });
+              clearTimeout(tFix);
+            }
+          } catch (e) {
+            console.warn('[fetchCourseData] Failed to set instructor_id:', e);
+          }
+        }
       }
 
       // Fetch units with topics and resources
@@ -776,7 +797,23 @@ export default function EditCoursePage() {
 
     let parsedResource = null;
     try {
-      const { url: sUrl, headers: sHeaders } = await getSupabaseHeaders();
+      const { url: sUrl, headers: sHeaders, token: sToken } = await getSupabaseHeaders();
+
+      // Ensure instructor_id so RLS policies work
+      try {
+        const jwt = JSON.parse(atob(sToken.split('.')[1]));
+        if (jwt?.sub) {
+          const ci = new AbortController();
+          const ti = setTimeout(() => ci.abort(), 5000);
+          await fetch(`${sUrl}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
+            method: 'PATCH', headers: { ...sHeaders, 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ instructor_id: jwt.sub }),
+            signal: ci.signal
+          });
+          clearTimeout(ti);
+        }
+      } catch { /* non-critical */ }
+
       const resourcePayload = {
         topic_id: topicData.id,
         unit_id: newTopicData.unitId,
@@ -849,7 +886,23 @@ export default function EditCoursePage() {
     console.log('[SaveResources] Starting save for topic:', topicId);
 
     try {
-      const { url: supabaseUrl, headers } = await getSupabaseHeaders();
+      const { url: supabaseUrl, headers, token: authToken } = await getSupabaseHeaders();
+
+      // Ensure instructor_id is set (RLS policies depend on it)
+      try {
+        const jwtPayload = JSON.parse(atob(authToken.split('.')[1]));
+        const uid = jwtPayload?.sub || '';
+        if (uid) {
+          const ctrlI = new AbortController();
+          const tI = setTimeout(() => ctrlI.abort(), 5000);
+          await fetch(`${supabaseUrl}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
+            method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ instructor_id: uid }),
+            signal: ctrlI.signal
+          });
+          clearTimeout(tI);
+        }
+      } catch { /* non-critical */ }
 
       const payload = {
         topic_id: topicId,
@@ -941,8 +994,8 @@ export default function EditCoursePage() {
       console.log('[SaveResources] Done!');
     } catch (err: any) {
       console.error('[SaveResources] Error:', err);
-      alert('Error al guardar: ' + (err?.message || 'Error desconocido'));
-      throw err;
+      alert('Error al guardar recursos: ' + (err?.message || 'Error desconocido'));
+      // Don't re-throw — TopicResourceEditor already handles the error display
     }
   };
 

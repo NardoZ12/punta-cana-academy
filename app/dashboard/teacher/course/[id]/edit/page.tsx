@@ -174,7 +174,7 @@ export default function EditCoursePage() {
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set());
   const [editingUnit, setEditingUnit] = useState<CourseUnit | null>(null);
   const [editingTopic, setEditingTopic] = useState<UnitTopic | null>(null);
-  const [editingResources, setEditingResources] = useState<{topic: UnitTopic, resources: Partial<TopicResources>} | null>(null);
+  const [editingResources, setEditingResources] = useState<{topic: UnitTopic, resources: Partial<TopicResources>, quizFromEval?: any[]} | null>(null);
   const [newUnitTitle, setNewUnitTitle] = useState('');
   const [addingTopicToUnit, setAddingTopicToUnit] = useState<string | null>(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
@@ -1059,6 +1059,77 @@ export default function EditCoursePage() {
         })));
       }
 
+      // === UPSERT QUIZ INTO EVALUATIONS TABLE ===
+      // Students read quiz from evaluations table, not additional_resources
+      if (data.quiz && data.quiz.length > 0) {
+        try {
+          let creatorId = '';
+          try {
+            const jwtP = JSON.parse(atob(authToken.split('.')[1]));
+            creatorId = jwtP?.sub || '';
+          } catch { /* skip */ }
+
+          // Check if evaluation already exists for this topic
+          const evalCtrl1 = new AbortController();
+          const evalT1 = setTimeout(() => evalCtrl1.abort(), 10000);
+          const evalCheckResp = await fetch(
+            `${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=id`,
+            { headers, signal: evalCtrl1.signal }
+          );
+          clearTimeout(evalT1);
+          const existingEvals = await evalCheckResp.json();
+
+          const evalPayload: any = {
+            scope: 'topic_quiz',
+            course_id: courseId,
+            unit_id: topic.unit_id,
+            topic_id: topicId,
+            title: `Quiz: ${editingResources?.topic.title || 'Tema'}`,
+            questions: data.quiz,
+            total_points: data.quiz.reduce((sum: number, q: any) => sum + (q.points || 1), 0),
+            passing_score: 70,
+            max_attempts: 3,
+            is_published: data.is_published ?? false,
+          };
+          if (creatorId) evalPayload.created_by = creatorId;
+
+          const evalCtrl2 = new AbortController();
+          const evalT2 = setTimeout(() => evalCtrl2.abort(), 15000);
+
+          if (Array.isArray(existingEvals) && existingEvals.length > 0) {
+            // PATCH existing evaluation
+            console.log('[SaveResources] Updating evaluation:', existingEvals[0].id);
+            await fetch(
+              `${supabaseUrl}/rest/v1/evaluations?id=eq.${existingEvals[0].id}`,
+              { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload), signal: evalCtrl2.signal }
+            );
+          } else {
+            // POST new evaluation
+            console.log('[SaveResources] Creating new evaluation for quiz');
+            await fetch(
+              `${supabaseUrl}/rest/v1/evaluations`,
+              { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload), signal: evalCtrl2.signal }
+            );
+          }
+          clearTimeout(evalT2);
+          console.log('[SaveResources] Quiz saved to evaluations table');
+        } catch (evalErr: any) {
+          console.warn('[SaveResources] Failed to save quiz to evaluations:', evalErr);
+          // Non-critical — quiz is also in additional_resources as backup
+        }
+      } else {
+        // If quiz was removed, delete evaluation record if it exists
+        try {
+          const delCtrl = new AbortController();
+          const delT = setTimeout(() => delCtrl.abort(), 10000);
+          await fetch(
+            `${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz`,
+            { method: 'DELETE', headers: { ...headers, 'Prefer': 'return=minimal' }, signal: delCtrl.signal }
+          );
+          clearTimeout(delT);
+        } catch { /* non-critical */ }
+      }
+
       setEditingResources(null);
       console.log('[SaveResources] Done!');
     } catch (err: any) {
@@ -1400,7 +1471,22 @@ export default function EditCoursePage() {
                               </div>
                               <div className="flex items-center gap-1">
                                 <button 
-                                  onClick={() => setEditingResources({ topic, resources: topic.resources || { introduction: '', introduction_format: 'markdown', video_url: '', video_provider: 'youtube', pdf_url: '', pdf_title: '', slides_url: '', slides_provider: 'google_slides', is_published: false } })} 
+                                  onClick={async () => {
+                                    // Fetch quiz from evaluations table (single source of truth for students)
+                                    let quizFromEval: any[] = [];
+                                    try {
+                                      const { url: sUrl, headers: sHeaders } = await getSupabaseHeaders();
+                                      const qCtrl = new AbortController();
+                                      const qT = setTimeout(() => qCtrl.abort(), 10000);
+                                      const qResp = await fetch(`${sUrl}/rest/v1/evaluations?topic_id=eq.${topic.id}&scope=eq.topic_quiz&select=questions`, { headers: sHeaders, signal: qCtrl.signal });
+                                      clearTimeout(qT);
+                                      if (qResp.ok) {
+                                        const evals = await qResp.json();
+                                        quizFromEval = Array.isArray(evals?.[0]?.questions) ? evals[0].questions : [];
+                                      }
+                                    } catch (e) { console.warn('[OpenResources] Failed to fetch quiz from evaluations:', e); }
+                                    setEditingResources({ topic, resources: topic.resources || { introduction: '', introduction_format: 'markdown', video_url: '', video_provider: 'youtube', pdf_url: '', pdf_title: '', slides_url: '', slides_provider: 'google_slides', is_published: false }, quizFromEval });
+                                  }} 
                                   className="px-3 py-1.5 text-xs bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg">
                                   Recursos
                                 </button>
@@ -1637,7 +1723,7 @@ export default function EditCoursePage() {
                   provider: (editingResources.resources.slides_provider as 'google_slides' | 'canva' | 'pdf' | 'custom') || 'google_slides'
                 } : null
               ].filter(Boolean) as any[],
-              quiz: extras.quiz || [],
+              quiz: (editingResources.quizFromEval && editingResources.quizFromEval.length > 0) ? editingResources.quizFromEval : (extras.quiz || []),
               is_published: editingResources.resources.is_published || false
             };
           })()}

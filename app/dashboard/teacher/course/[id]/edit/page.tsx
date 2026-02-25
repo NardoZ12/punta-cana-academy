@@ -953,20 +953,23 @@ export default function EditCoursePage() {
     };
 
     console.log('[SaveResources] Starting save for topic:', topicId);
+    console.log('[SaveResources] PDF:', pdfDoc?.url || '(none)', '| Slides:', slidesDoc?.url || '(none)');
+    console.log('[SaveResources] Videos:', data.videos.length, '| Quiz questions:', data.quiz.length);
 
     try {
       const { url: supabaseUrl, headers, token: authToken } = await getSupabaseHeaders();
 
       // Ensure instructor_id is set (RLS policies depend on it)
+      let userId = '';
       try {
         const jwtPayload = JSON.parse(atob(authToken.split('.')[1]));
-        const uid = jwtPayload?.sub || '';
-        if (uid) {
+        userId = jwtPayload?.sub || '';
+        if (userId) {
           const ctrlI = new AbortController();
           const tI = setTimeout(() => ctrlI.abort(), 5000);
           await fetch(`${supabaseUrl}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ instructor_id: uid }),
+            body: JSON.stringify({ instructor_id: userId }),
             signal: ctrlI.signal
           });
           clearTimeout(tI);
@@ -990,65 +993,36 @@ export default function EditCoursePage() {
         additional_resources: { videos: additionalVideos || [], quiz: data.quiz || [] }
       };
 
-      console.log('[SaveResources] Payload ready, checking existing...');
+      console.log('[SaveResources] Payload:', JSON.stringify(payload).substring(0, 300));
 
-      // 1. Check if resource row already exists
-      const ctrl1 = new AbortController();
-      const t1 = setTimeout(() => ctrl1.abort(), 15000);
-      const checkRes = await fetch(
-        `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}&select=id`,
-        { headers, signal: ctrl1.signal }
+      // === UPSERT topic_resources (INSERT or UPDATE on conflict with topic_id UNIQUE) ===
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const upsertRes = await fetch(
+        `${supabaseUrl}/rest/v1/topic_resources?on_conflict=topic_id`,
+        {
+          method: 'POST',
+          headers: { ...headers, 'Prefer': 'return=representation,resolution=merge-duplicates' },
+          body: JSON.stringify(payload),
+          signal: ctrl.signal,
+        }
       );
-      clearTimeout(t1);
-      const existing = await checkRes.json();
-      console.log('[SaveResources] Existing check:', existing);
+      clearTimeout(t);
 
-      let savedResource: any = null;
+      const upsertBody = await upsertRes.text();
+      console.log('[SaveResources] Upsert response:', upsertRes.status, upsertBody.substring(0, 200));
 
-      const ctrl2 = new AbortController();
-      const t2 = setTimeout(() => ctrl2.abort(), 15000);
-
-      if (Array.isArray(existing) && existing.length > 0) {
-        // 2a. PATCH existing
-        console.log('[SaveResources] Updating existing resource:', existing[0].id);
-        const updateRes = await fetch(
-          `${supabaseUrl}/rest/v1/topic_resources?id=eq.${existing[0].id}`,
-          {
-            method: 'PATCH',
-            headers: { ...headers, 'Prefer': 'return=representation' },
-            body: JSON.stringify(payload),
-            signal: ctrl2.signal,
-          }
-        );
-        clearTimeout(t2);
-        const body = await updateRes.json();
-        if (!updateRes.ok) {
-          console.error('[SaveResources] PATCH error:', updateRes.status, body);
-          throw new Error(body?.message || `Error ${updateRes.status}`);
-        }
-        savedResource = body?.[0] || body;
-      } else {
-        // 2b. POST new
-        console.log('[SaveResources] Inserting new resource');
-        const insertRes = await fetch(
-          `${supabaseUrl}/rest/v1/topic_resources`,
-          {
-            method: 'POST',
-            headers: { ...headers, 'Prefer': 'return=representation' },
-            body: JSON.stringify(payload),
-            signal: ctrl2.signal,
-          }
-        );
-        clearTimeout(t2);
-        const body = await insertRes.json();
-        if (!insertRes.ok) {
-          console.error('[SaveResources] POST error:', insertRes.status, body);
-          throw new Error(body?.message || `Error ${insertRes.status}`);
-        }
-        savedResource = body?.[0] || body;
+      if (!upsertRes.ok) {
+        throw new Error(`Error ${upsertRes.status}: ${upsertBody}`);
       }
 
-      console.log('[SaveResources] Saved:', savedResource);
+      let savedResource: any = null;
+      try {
+        const parsed = JSON.parse(upsertBody);
+        savedResource = Array.isArray(parsed) ? parsed[0] : parsed;
+      } catch { /* ignore parse error */ }
+
+      console.log('[SaveResources] Saved resource id:', savedResource?.id);
 
       if (savedResource) {
         setUnits(units.map(u => ({
@@ -1063,22 +1037,6 @@ export default function EditCoursePage() {
       // Students read quiz from evaluations table, not additional_resources
       if (data.quiz && data.quiz.length > 0) {
         try {
-          let creatorId = '';
-          try {
-            const jwtP = JSON.parse(atob(authToken.split('.')[1]));
-            creatorId = jwtP?.sub || '';
-          } catch { /* skip */ }
-
-          // Check if evaluation already exists for this topic
-          const evalCtrl1 = new AbortController();
-          const evalT1 = setTimeout(() => evalCtrl1.abort(), 10000);
-          const evalCheckResp = await fetch(
-            `${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=id`,
-            { headers, signal: evalCtrl1.signal }
-          );
-          clearTimeout(evalT1);
-          const existingEvals = await evalCheckResp.json();
-
           const evalPayload: any = {
             scope: 'topic_quiz',
             course_id: courseId,
@@ -1091,20 +1049,28 @@ export default function EditCoursePage() {
             max_attempts: 3,
             is_published: data.is_published ?? false,
           };
-          if (creatorId) evalPayload.created_by = creatorId;
+          if (userId) evalPayload.created_by = userId;
+
+          // Check if evaluation exists, then PATCH or POST
+          const evalCtrl1 = new AbortController();
+          const evalT1 = setTimeout(() => evalCtrl1.abort(), 10000);
+          const evalCheckResp = await fetch(
+            `${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=id`,
+            { headers, signal: evalCtrl1.signal }
+          );
+          clearTimeout(evalT1);
+          const existingEvals = await evalCheckResp.json();
 
           const evalCtrl2 = new AbortController();
           const evalT2 = setTimeout(() => evalCtrl2.abort(), 15000);
 
           if (Array.isArray(existingEvals) && existingEvals.length > 0) {
-            // PATCH existing evaluation
             console.log('[SaveResources] Updating evaluation:', existingEvals[0].id);
             await fetch(
               `${supabaseUrl}/rest/v1/evaluations?id=eq.${existingEvals[0].id}`,
               { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload), signal: evalCtrl2.signal }
             );
           } else {
-            // POST new evaluation
             console.log('[SaveResources] Creating new evaluation for quiz');
             await fetch(
               `${supabaseUrl}/rest/v1/evaluations`,
@@ -1115,10 +1081,9 @@ export default function EditCoursePage() {
           console.log('[SaveResources] Quiz saved to evaluations table');
         } catch (evalErr: any) {
           console.warn('[SaveResources] Failed to save quiz to evaluations:', evalErr);
-          // Non-critical — quiz is also in additional_resources as backup
         }
       } else {
-        // If quiz was removed, delete evaluation record if it exists
+        // If quiz was removed, delete evaluation record
         try {
           const delCtrl = new AbortController();
           const delT = setTimeout(() => delCtrl.abort(), 10000);
@@ -1135,7 +1100,6 @@ export default function EditCoursePage() {
     } catch (err: any) {
       console.error('[SaveResources] Error:', err);
       alert('Error al guardar recursos: ' + (err?.message || 'Error desconocido'));
-      // Don't re-throw — TopicResourceEditor already handles the error display
     }
   };
 

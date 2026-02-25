@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/utils/supabase/client'
+import { supabaseGet, supabasePost, supabasePatch, pgIn } from '@/utils/supabase/fetch'
 import { Course, CourseLesson, Enrollment, Profile } from '@/types/lms'
 
 // Hook para obtener todos los cursos
@@ -108,37 +109,30 @@ export function useStudentEnrollments(studentId?: string) {
   return useQuery({
     queryKey: ['student-enrollments', studentId],
     queryFn: async (): Promise<Enrollment[]> => {
-      const supabase = createClient()
+      console.log('[useStudentEnrollments] Fetching for student:', studentId)
       
-      // Primero obtener las inscripciones
-      const { data: enrollmentsData, error: enrollmentsError } = await supabase
-        .from('enrollments')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false })
-
-      if (enrollmentsError) {
-        console.error('Error fetching enrollments:', enrollmentsError)
-        return []
-      }
+      // Get enrollments via direct fetch
+      const enrollmentsData = await supabaseGet(
+        `enrollments?student_id=eq.${studentId}&order=created_at.desc&select=*`
+      )
       
       if (!enrollmentsData || enrollmentsData.length === 0) {
         return []
       }
       
-      // Obtener los cursos relacionados
-      const courseIds = enrollmentsData.map(e => e.course_id)
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select('*')
-        .in('id', courseIds)
+      // Get related courses
+      const courseIds = enrollmentsData.map((e: any) => e.course_id)
+      const coursesData = await supabaseGet(
+        `courses?id=${pgIn(courseIds)}&select=*`
+      )
       
-      // Combinar datos
-      const enrollmentsWithCourses = enrollmentsData.map(enrollment => ({
+      // Combine data
+      const enrollmentsWithCourses = enrollmentsData.map((enrollment: any) => ({
         ...enrollment,
-        course: coursesData?.find(c => c.id === enrollment.course_id) || null
+        course: coursesData?.find((c: any) => c.id === enrollment.course_id) || null
       }))
       
+      console.log('[useStudentEnrollments] Result:', enrollmentsWithCourses.length, 'enrollments')
       return enrollmentsWithCourses as Enrollment[]
     },
     enabled: !!studentId
@@ -401,26 +395,15 @@ export function useStudentStats(studentId?: string) {
   return useQuery({
     queryKey: ['student-stats', studentId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useStudentStats] Fetching for student:', studentId)
       
       try {
-        // Obtener inscripciones
-        const { data: enrollments, error } = await supabase
-          .from('enrollments')
-          .select('*')
-          .eq('student_id', studentId)
-
-        if (error) {
-          console.error('Error fetching student stats:', error)
-          return {
-            totalCourses: 0,
-            completedCourses: 0,
-            inProgressCourses: 0,
-          }
-        }
+        const enrollments = await supabaseGet(
+          `enrollments?student_id=eq.${studentId}&select=*`
+        )
         
-        const total = enrollments?.length || 0
-        const completed = enrollments?.filter(e => e.status === 'completed')?.length || 0
+        const total = (enrollments || []).length
+        const completed = (enrollments || []).filter((e: any) => e.status === 'completed')?.length || 0
         const inProgress = total - completed
 
         return {
@@ -450,56 +433,52 @@ export function useCourseStructure(courseId?: string) {
   return useQuery({
     queryKey: ['course-structure', courseId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useCourseStructure] Fetching for course:', courseId)
       
-      // Obtener curso con info del instructor
-      const { data: course, error: courseError } = await supabase
-        .from('courses')
-        .select('*, profiles:instructor_id(id, full_name, email)')
-        .eq('id', courseId)
-        .single()
+      // Get course with instructor info
+      const courseArr = await supabaseGet(
+        `courses?id=eq.${courseId}&select=*,profiles:instructor_id(id,full_name,email)`
+      )
+      const course = courseArr?.[0]
+      if (!course) throw new Error('Curso no encontrado')
       
-      if (courseError) throw new Error(courseError.message)
+      // Get published units
+      const units = await supabaseGet(
+        `course_units?course_id=eq.${courseId}&order=order_index.asc&select=*`
+      )
       
-      // Obtener unidades ordenadas
-      const { data: units } = await supabase
-        .from('course_units')
-        .select('*')
-        .eq('course_id', courseId)
-        .eq('is_published', true)
-        .order('order_index', { ascending: true })
+      // Get published topics
+      const topics = await supabaseGet(
+        `unit_topics?course_id=eq.${courseId}&order=order_index.asc&select=*`
+      )
       
-      // Obtener temas de todas las unidades
-      const { data: topics } = await supabase
-        .from('unit_topics')
-        .select('*')
-        .eq('course_id', courseId)
-        .eq('is_published', true)
-        .order('order_index', { ascending: true })
+      // Get resources for all topics
+      const topicIds = (topics || []).map((t: any) => t.id)
+      let resources: any[] = []
+      if (topicIds.length > 0) {
+        resources = await supabaseGet(
+          `topic_resources?topic_id=${pgIn(topicIds)}&select=*`
+        )
+      }
       
-      // Obtener recursos de todos los temas
-      const topicIds = topics?.map(t => t.id) || []
-      const { data: resources } = await supabase
-        .from('topic_resources')
-        .select('*')
-        .in('topic_id', topicIds.length > 0 ? topicIds : ['none'])
-      
-      // Organizar estructura jerárquica
-      const unitsWithTopics = (units || []).map(unit => ({
+      // Build hierarchical structure
+      const unitsWithTopics = (units || []).map((unit: any) => ({
         ...unit,
         topics: (topics || [])
-          .filter(t => t.unit_id === unit.id)
-          .map(topic => ({
+          .filter((t: any) => t.unit_id === unit.id)
+          .map((topic: any) => ({
             ...topic,
-            resources: resources?.find(r => r.topic_id === topic.id) || null
+            resources: resources?.find((r: any) => r.topic_id === topic.id) || null
           }))
       }))
+      
+      console.log('[useCourseStructure] Result:', (units || []).length, 'units,', (topics || []).length, 'topics')
       
       return {
         ...course,
         units: unitsWithTopics,
-        totalUnits: units?.length || 0,
-        totalTopics: topics?.length || 0
+        totalUnits: (units || []).length,
+        totalTopics: (topics || []).length
       }
     },
     enabled: !!courseId
@@ -511,53 +490,46 @@ export function useStudentAssignments(courseId?: string, studentId?: string) {
   return useQuery({
     queryKey: ['student-assignments', courseId, studentId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useStudentAssignments] Fetching for course:', courseId, 'student:', studentId)
       
-      // Obtener tareas del curso (para todos o específicas del estudiante)
-      const { data: assignments, error } = await supabase
-        .from('assignments')
-        .select('*')
-        .eq('course_id', courseId)
-        .eq('is_published', true)
-        .or(`target_type.eq.all_students,target_student_id.eq.${studentId}`)
-        .order('due_date', { ascending: true })
+      // Get course assignments
+      const assignments = await supabaseGet(
+        `assignments?course_id=eq.${courseId}&is_published=eq.true&or=(target_type.eq.all_students,target_student_id.eq.${studentId})&order=due_date.asc&select=*`
+      ).catch(() => [])
       
-      if (error) {
-        console.error('Error fetching assignments:', error)
+      if (!assignments || assignments.length === 0) {
         return { pending: [], submitted: [], graded: [] }
       }
       
-      // Obtener entregas del estudiante
-      const assignmentIds = assignments?.map(a => a.id) || []
-      const { data: submissions } = await supabase
-        .from('assignment_submissions')
-        .select('*')
-        .eq('student_id', studentId)
-        .in('assignment_id', assignmentIds.length > 0 ? assignmentIds : ['none'])
+      // Get student submissions
+      const assignmentIds = assignments.map((a: any) => a.id)
+      const submissions = await supabaseGet(
+        `assignment_submissions?student_id=eq.${studentId}&assignment_id=${pgIn(assignmentIds)}&select=*`
+      ).catch(() => [])
       
-      // Clasificar tareas
-      const submittedIds = new Set(submissions?.map(s => s.assignment_id) || [])
-      const gradedSubmissions = submissions?.filter(s => s.status === 'graded') || []
-      const gradedIds = new Set(gradedSubmissions.map(s => s.assignment_id))
+      // Classify assignments
+      const submittedIds = new Set((submissions || []).map((s: any) => s.assignment_id))
+      const gradedSubmissions = (submissions || []).filter((s: any) => s.status === 'graded')
+      const gradedIds = new Set(gradedSubmissions.map((s: any) => s.assignment_id))
       
-      const pending = (assignments || [])
-        .filter(a => !submittedIds.has(a.id))
-        .map(a => ({ ...a, status: 'pending' }))
+      const pending = assignments
+        .filter((a: any) => !submittedIds.has(a.id))
+        .map((a: any) => ({ ...a, status: 'pending' }))
       
-      const submitted = (assignments || [])
-        .filter(a => submittedIds.has(a.id) && !gradedIds.has(a.id))
-        .map(a => ({
+      const submitted = assignments
+        .filter((a: any) => submittedIds.has(a.id) && !gradedIds.has(a.id))
+        .map((a: any) => ({
           ...a,
           status: 'submitted',
-          submission: submissions?.find(s => s.assignment_id === a.id)
+          submission: submissions?.find((s: any) => s.assignment_id === a.id)
         }))
       
-      const graded = (assignments || [])
-        .filter(a => gradedIds.has(a.id))
-        .map(a => ({
+      const graded = assignments
+        .filter((a: any) => gradedIds.has(a.id))
+        .map((a: any) => ({
           ...a,
           status: 'graded',
-          submission: submissions?.find(s => s.assignment_id === a.id)
+          submission: submissions?.find((s: any) => s.assignment_id === a.id)
         }))
       
       return { pending, submitted, graded }
@@ -571,55 +543,52 @@ export function useAllStudentAssignments(studentId?: string) {
   return useQuery({
     queryKey: ['all-student-assignments', studentId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useAllStudentAssignments] Fetching for student:', studentId)
       
-      // Obtener inscripciones del estudiante
-      const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('course_id')
-        .eq('student_id', studentId)
+      // Get student enrollments
+      const enrollments = await supabaseGet(
+        `enrollments?student_id=eq.${studentId}&select=course_id`
+      ).catch(() => [])
       
-      const courseIds = enrollments?.map(e => e.course_id) || []
+      const courseIds = (enrollments || []).map((e: any) => e.course_id)
       if (courseIds.length === 0) return { pending: [], submitted: [], graded: [] }
       
-      // Obtener tareas de todos los cursos
-      const { data: assignments } = await supabase
-        .from('assignments')
-        .select('*, courses:course_id(id, title)')
-        .in('course_id', courseIds)
-        .eq('is_published', true)
-        .order('due_date', { ascending: true })
+      // Get assignments from all courses
+      const assignments = await supabaseGet(
+        `assignments?course_id=${pgIn(courseIds)}&is_published=eq.true&order=due_date.asc&select=*,courses:course_id(id,title)`
+      ).catch(() => [])
       
-      // Obtener entregas del estudiante
-      const assignmentIds = assignments?.map(a => a.id) || []
-      const { data: submissions } = await supabase
-        .from('assignment_submissions')
-        .select('*')
-        .eq('student_id', studentId)
-        .in('assignment_id', assignmentIds.length > 0 ? assignmentIds : ['none'])
+      // Get student submissions
+      const assignmentIds = (assignments || []).map((a: any) => a.id)
+      let submissions: any[] = []
+      if (assignmentIds.length > 0) {
+        submissions = await supabaseGet(
+          `assignment_submissions?student_id=eq.${studentId}&assignment_id=${pgIn(assignmentIds)}&select=*`
+        ).catch(() => [])
+      }
       
-      const submittedIds = new Set(submissions?.map(s => s.assignment_id) || [])
-      const gradedSubmissions = submissions?.filter(s => s.status === 'graded') || []
-      const gradedIds = new Set(gradedSubmissions.map(s => s.assignment_id))
+      const submittedIds = new Set((submissions || []).map((s: any) => s.assignment_id))
+      const gradedSubmissions = (submissions || []).filter((s: any) => s.status === 'graded')
+      const gradedIds = new Set(gradedSubmissions.map((s: any) => s.assignment_id))
       
       const pending = (assignments || [])
-        .filter(a => !submittedIds.has(a.id))
-        .map(a => ({ ...a, status: 'pending' }))
+        .filter((a: any) => !submittedIds.has(a.id))
+        .map((a: any) => ({ ...a, status: 'pending' }))
       
       const submitted = (assignments || [])
-        .filter(a => submittedIds.has(a.id) && !gradedIds.has(a.id))
-        .map(a => ({
+        .filter((a: any) => submittedIds.has(a.id) && !gradedIds.has(a.id))
+        .map((a: any) => ({
           ...a,
           status: 'submitted',
-          submission: submissions?.find(s => s.assignment_id === a.id)
+          submission: submissions?.find((s: any) => s.assignment_id === a.id)
         }))
       
       const graded = (assignments || [])
-        .filter(a => gradedIds.has(a.id))
-        .map(a => ({
+        .filter((a: any) => gradedIds.has(a.id))
+        .map((a: any) => ({
           ...a,
           status: 'graded',
-          submission: submissions?.find(s => s.assignment_id === a.id)
+          submission: submissions?.find((s: any) => s.assignment_id === a.id)
         }))
       
       return { pending, submitted, graded }
@@ -633,37 +602,34 @@ export function useStudentEvaluations(courseId?: string, studentId?: string) {
   return useQuery({
     queryKey: ['student-evaluations', courseId, studentId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useStudentEvaluations] Fetching for course:', courseId, 'student:', studentId)
       
-      // Obtener evaluaciones del curso
-      const { data: evaluations, error } = await supabase
-        .from('evaluations')
-        .select('*')
-        .eq('course_id', courseId)
-        .eq('is_published', true)
-        .order('created_at', { ascending: true })
+      // Get course evaluations
+      const evaluations = await supabaseGet(
+        `evaluations?course_id=eq.${courseId}&is_published=eq.true&order=created_at.asc&select=*`
+      ).catch(() => [])
       
-      if (error) {
-        console.error('Error fetching evaluations:', error)
+      if (!evaluations || evaluations.length === 0) {
         return { pending: [], completed: [] }
       }
       
-      // Obtener intentos del estudiante
-      const evalIds = evaluations?.map(e => e.id) || []
-      const { data: attempts } = await supabase
-        .from('evaluation_attempts')
-        .select('*')
-        .eq('student_id', studentId)
-        .in('evaluation_id', evalIds.length > 0 ? evalIds : ['none'])
-        .order('attempt_number', { ascending: false })
+      // Get student attempts
+      const evalIds = evaluations.map((e: any) => e.id)
+      const attempts = await supabaseGet(
+        `evaluation_attempts?student_id=eq.${studentId}&evaluation_id=${pgIn(evalIds)}&order=attempt_number.desc&select=*`
+      ).catch(() => [])
       
-      // Clasificar evaluaciones
-      const completedIds = new Set(attempts?.filter(a => a.status === 'submitted' || a.status === 'graded').map(a => a.evaluation_id) || [])
+      // Classify evaluations
+      const completedIds = new Set(
+        (attempts || [])
+          .filter((a: any) => a.status === 'submitted' || a.status === 'graded')
+          .map((a: any) => a.evaluation_id)
+      )
       
-      const pending = (evaluations || [])
-        .filter(e => !completedIds.has(e.id))
-        .map(e => {
-          const evalAttempts = attempts?.filter(a => a.evaluation_id === e.id) || []
+      const pending = evaluations
+        .filter((e: any) => !completedIds.has(e.id))
+        .map((e: any) => {
+          const evalAttempts = (attempts || []).filter((a: any) => a.evaluation_id === e.id)
           return {
             ...e,
             status: 'pending',
@@ -672,11 +638,11 @@ export function useStudentEvaluations(courseId?: string, studentId?: string) {
           }
         })
       
-      const completed = (evaluations || [])
-        .filter(e => completedIds.has(e.id))
-        .map(e => {
-          const evalAttempts = attempts?.filter(a => a.evaluation_id === e.id) || []
-          const bestAttempt = evalAttempts.reduce((best, current) => 
+      const completed = evaluations
+        .filter((e: any) => completedIds.has(e.id))
+        .map((e: any) => {
+          const evalAttempts = (attempts || []).filter((a: any) => a.evaluation_id === e.id)
+          const bestAttempt = evalAttempts.reduce((best: any, current: any) => 
             (current.score || 0) > (best?.score || 0) ? current : best
           , evalAttempts[0])
           return {
@@ -699,44 +665,45 @@ export function useAllStudentEvaluations(studentId?: string) {
   return useQuery({
     queryKey: ['all-student-evaluations', studentId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useAllStudentEvaluations] Fetching for student:', studentId)
       
-      // Obtener inscripciones
-      const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('course_id')
-        .eq('student_id', studentId)
+      // Get enrollments
+      const enrollments = await supabaseGet(
+        `enrollments?student_id=eq.${studentId}&select=course_id`
+      ).catch(() => [])
       
-      const courseIds = enrollments?.map(e => e.course_id) || []
+      const courseIds = (enrollments || []).map((e: any) => e.course_id)
       if (courseIds.length === 0) return { pending: [], completed: [] }
       
-      // Obtener evaluaciones de todos los cursos
-      const { data: evaluations } = await supabase
-        .from('evaluations')
-        .select('*, courses:course_id(id, title)')
-        .in('course_id', courseIds)
-        .eq('is_published', true)
-        .order('created_at', { ascending: true })
+      // Get evaluations from all courses
+      const evaluations = await supabaseGet(
+        `evaluations?course_id=${pgIn(courseIds)}&is_published=eq.true&order=created_at.asc&select=*,courses:course_id(id,title)`
+      ).catch(() => [])
       
-      // Obtener intentos
-      const evalIds = evaluations?.map(e => e.id) || []
-      const { data: attempts } = await supabase
-        .from('evaluation_attempts')
-        .select('*')
-        .eq('student_id', studentId)
-        .in('evaluation_id', evalIds.length > 0 ? evalIds : ['none'])
+      // Get attempts
+      const evalIds = (evaluations || []).map((e: any) => e.id)
+      let attempts: any[] = []
+      if (evalIds.length > 0) {
+        attempts = await supabaseGet(
+          `evaluation_attempts?student_id=eq.${studentId}&evaluation_id=${pgIn(evalIds)}&select=*`
+        ).catch(() => [])
+      }
       
-      const completedIds = new Set(attempts?.filter(a => a.status === 'submitted' || a.status === 'graded').map(a => a.evaluation_id) || [])
+      const completedIds = new Set(
+        (attempts || [])
+          .filter((a: any) => a.status === 'submitted' || a.status === 'graded')
+          .map((a: any) => a.evaluation_id)
+      )
       
       const pending = (evaluations || [])
-        .filter(e => !completedIds.has(e.id))
-        .map(e => ({ ...e, status: 'pending' }))
+        .filter((e: any) => !completedIds.has(e.id))
+        .map((e: any) => ({ ...e, status: 'pending' }))
       
       const completed = (evaluations || [])
-        .filter(e => completedIds.has(e.id))
-        .map(e => {
-          const bestAttempt = attempts?.filter(a => a.evaluation_id === e.id)
-            .reduce((best, curr) => (curr.score || 0) > (best?.score || 0) ? curr : best, undefined as any)
+        .filter((e: any) => completedIds.has(e.id))
+        .map((e: any) => {
+          const bestAttempt = (attempts || []).filter((a: any) => a.evaluation_id === e.id)
+            .reduce((best: any, curr: any) => (curr.score || 0) > (best?.score || 0) ? curr : best, undefined as any)
           return { ...e, status: 'completed', bestScore: bestAttempt?.score, passed: bestAttempt?.passed }
         })
       
@@ -751,25 +718,26 @@ export function useStudentCourseProgress(courseId?: string, studentId?: string) 
   return useQuery({
     queryKey: ['student-course-progress', courseId, studentId],
     queryFn: async () => {
-      const supabase = createClient()
+      console.log('[useStudentCourseProgress] Fetching for course:', courseId, 'student:', studentId)
       
-      // Obtener progreso por unidad
-      const { data: unitProgress } = await supabase
-        .from('unit_progress')
-        .select('*')
-        .eq('course_id', courseId)
-        .eq('student_id', studentId)
+      // Get unit progress
+      const unitProgress = await supabaseGet(
+        `unit_progress?course_id=eq.${courseId}&student_id=eq.${studentId}&select=*`
+      ).catch(() => [])
       
-      // Obtener progreso por tema
-      const { data: topicProgress } = await supabase
-        .from('topic_progress')
-        .select('*')
-        .eq('course_id', courseId)
-        .eq('student_id', studentId)
+      // Get topic progress
+      const topicProgress = await supabaseGet(
+        `topic_progress?course_id=eq.${courseId}&student_id=eq.${studentId}&select=*`
+      ).catch(() => [])
       
-      // Calcular progreso general
-      const completedTopics = topicProgress?.filter(t => t.completed)?.length || 0
-      const totalTopics = topicProgress?.length || 1
+      // Get total topics count for this course
+      const allTopics = await supabaseGet(
+        `unit_topics?course_id=eq.${courseId}&select=id`
+      ).catch(() => [])
+      
+      // Calculate overall progress
+      const completedTopics = (topicProgress || []).filter((t: any) => t.completed)?.length || 0
+      const totalTopics = (allTopics || []).length || 1
       const overallProgress = Math.round((completedTopics / totalTopics) * 100)
       
       return {

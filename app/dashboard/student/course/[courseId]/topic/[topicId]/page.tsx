@@ -1,13 +1,13 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { supabaseGet, supabasePost, supabasePatch, pgIn } from '@/utils/supabase/fetch';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
   ArrowLeft,
-  ArrowRight,
   BookOpen,
   CheckCircle,
   Clock,
@@ -18,7 +18,11 @@ import {
   ExternalLink,
   Play,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Award,
+  AlertCircle,
+  RotateCcw,
+  HelpCircle
 } from 'lucide-react';
 import { getVideoInfo } from '@/utils/videoEmbed';
 
@@ -40,16 +44,13 @@ interface TopicData {
     slides_url: string | null;
     slides_provider: string | null;
     additional_resources: any[];
-  };
-  unit?: {
-    title: string;
-    course?: {
-      title: string;
-    };
-  };
+  } | null;
+  unit_title?: string;
+  course_title?: string;
 }
 
 interface TopicProgress {
+  id?: string;
   introduction_read: boolean;
   video_watched: boolean;
   video_progress_percent: number;
@@ -58,136 +59,300 @@ interface TopicProgress {
   completed: boolean;
 }
 
+interface QuizQuestion {
+  id: string;
+  question_text: string;
+  question_type: string;
+  options: { id: string; text: string; is_correct?: boolean }[];
+  points: number;
+  order_index: number;
+}
+
+interface QuizData {
+  id: string;
+  title: string;
+  passing_score: number;
+  max_attempts: number;
+  time_limit_minutes: number | null;
+  questions: QuizQuestion[];
+}
+
 export default function StudentTopicPage() {
   const params = useParams();
+  const router = useRouter();
   const courseId = params.courseId as string;
   const topicId = params.topicId as string;
   const { profile } = useAuthContext();
-  
+
   const [topic, setTopic] = useState<TopicData | null>(null);
   const [progress, setProgress] = useState<TopicProgress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [prevTopic, setPrevTopic] = useState<TopicData | null>(null);
-  const [nextTopic, setNextTopic] = useState<TopicData | null>(null);
-  
-  const supabase = createClient();
+  const [prevTopic, setPrevTopic] = useState<{ id: string; title: string } | null>(null);
+  const [nextTopic, setNextTopic] = useState<{ id: string; title: string } | null>(null);
+  const [marking, setMarking] = useState(false);
+
+  // Quiz state
+  const [quiz, setQuiz] = useState<QuizData | null>(null);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState<number | null>(null);
+  const [quizPassed, setQuizPassed] = useState(false);
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [previousAttempts, setPreviousAttempts] = useState(0);
+
+  const loadTopicData = useCallback(async () => {
+    if (!topicId || !profile?.id) return;
+
+    setLoading(true);
+    setQuizSubmitted(false);
+    setQuizScore(null);
+    setQuizAnswers({});
+    setShowQuiz(false);
+
+    try {
+      console.log('[TopicViewer] Loading topic:', topicId);
+
+      // Load topic data
+      const topicArr = await supabaseGet(
+        `unit_topics?id=eq.${topicId}&select=*`
+      );
+      const topicData = topicArr?.[0];
+      if (!topicData) {
+        setLoading(false);
+        return;
+      }
+
+      // Load unit title
+      const unitArr = await supabaseGet(
+        `course_units?id=eq.${topicData.unit_id}&select=title`
+      );
+
+      // Load course title
+      const courseArr = await supabaseGet(
+        `courses?id=eq.${topicData.course_id || courseId}&select=title`
+      );
+
+      // Load resources
+      const resources = await supabaseGet(
+        `topic_resources?topic_id=eq.${topicId}&select=*`
+      ).catch(() => []);
+
+      const transformedTopic: TopicData = {
+        ...topicData,
+        course_id: topicData.course_id || courseId,
+        resources: resources?.[0] || null,
+        unit_title: unitArr?.[0]?.title || '',
+        course_title: courseArr?.[0]?.title || '',
+      };
+      setTopic(transformedTopic);
+
+      // Load progress
+      const progressArr = await supabaseGet(
+        `topic_progress?topic_id=eq.${topicId}&student_id=eq.${profile.id}&select=*`
+      ).catch(() => []);
+      setProgress(progressArr?.[0] || null);
+
+      // Load prev/next topics in same unit
+      const allTopics = await supabaseGet(
+        `unit_topics?unit_id=eq.${topicData.unit_id}&order=order_index.asc&select=id,title,order_index`
+      ).catch(() => []);
+
+      if (allTopics && allTopics.length > 0) {
+        const currentIndex = allTopics.findIndex((t: any) => t.id === topicId);
+        setPrevTopic(currentIndex > 0 ? allTopics[currentIndex - 1] : null);
+        setNextTopic(currentIndex < allTopics.length - 1 ? allTopics[currentIndex + 1] : null);
+      }
+
+      // Load quiz (evaluation linked to this topic)
+      try {
+        const evaluations = await supabaseGet(
+          `evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=*`
+        ).catch(() => []);
+
+        if (evaluations && evaluations.length > 0) {
+          const evalData = evaluations[0];
+          // Load questions
+          const questions = await supabaseGet(
+            `evaluation_questions?evaluation_id=eq.${evalData.id}&order=order_index.asc&select=*`
+          ).catch(() => []);
+
+          if (questions && questions.length > 0) {
+            setQuiz({
+              id: evalData.id,
+              title: evalData.title || 'Quiz del Tema',
+              passing_score: evalData.passing_score || 70,
+              max_attempts: evalData.max_attempts || 3,
+              time_limit_minutes: evalData.time_limit_minutes,
+              questions: questions.map((q: any) => ({
+                id: q.id,
+                question_text: q.question_text,
+                question_type: q.question_type || 'multiple_choice',
+                options: Array.isArray(q.options) ? q.options : [],
+                points: q.points || 1,
+                order_index: q.order_index,
+              })),
+            });
+
+            // Check previous attempts
+            const attempts = await supabaseGet(
+              `evaluation_attempts?evaluation_id=eq.${evalData.id}&student_id=eq.${profile.id}&select=*`
+            ).catch(() => []);
+            setPreviousAttempts((attempts || []).length);
+
+            // If already passed, show results
+            const passed = (attempts || []).find((a: any) => a.passed);
+            if (passed) {
+              setQuizScore(passed.score);
+              setQuizPassed(true);
+              setQuizSubmitted(true);
+            }
+          }
+        }
+      } catch (e) {
+        console.log('[TopicViewer] No quiz for this topic');
+      }
+
+      // Register topic access
+      await updateProgressField({
+        last_accessed_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('[TopicViewer] Error loading topic:', error);
+    }
+
+    setLoading(false);
+  }, [topicId, profile?.id, courseId]);
 
   useEffect(() => {
     loadTopicData();
-  }, [topicId, profile?.id]);
+  }, [loadTopicData]);
 
-  const loadTopicData = async () => {
-    if (!topicId || !profile?.id) return;
-    
-    setLoading(true);
-    
-    // Cargar tema con recursos
-    const { data: topicData, error: topicError } = await supabase
-      .from('unit_topics')
-      .select(`
-        *,
-        unit:course_units(title, course:courses(title)),
-        resources:topic_resources(*)
-      `)
-      .eq('id', topicId)
-      .single();
+  const updateProgressField = async (updates: Record<string, any>) => {
+    if (!profile?.id || !topicId || !topic) return;
 
-    if (topicError) {
-      console.error('Error loading topic:', topicError);
-      setLoading(false);
-      return;
-    }
+    try {
+      // Check if progress record exists
+      const existing = await supabaseGet(
+        `topic_progress?topic_id=eq.${topicId}&student_id=eq.${profile.id}&select=id`
+      ).catch(() => []);
 
-    // Transformar datos
-    const transformedTopic: TopicData = {
-      ...topicData,
-      unit: topicData.unit,
-      resources: topicData.resources?.[0] || null
-    };
-    setTopic(transformedTopic);
-
-    // Cargar progreso del estudiante
-    const { data: progressData } = await supabase
-      .from('topic_progress')
-      .select('*')
-      .eq('topic_id', topicId)
-      .eq('student_id', profile.id)
-      .single();
-
-    setProgress(progressData);
-
-    // Cargar temas anterior y siguiente
-    const { data: allTopics } = await supabase
-      .from('unit_topics')
-      .select('id, title, order_index, unit_id')
-      .eq('unit_id', topicData.unit_id)
-      .eq('is_published', true)
-      .order('order_index', { ascending: true });
-
-    if (allTopics) {
-      const currentIndex = allTopics.findIndex(t => t.id === topicId);
-      if (currentIndex > 0) setPrevTopic(allTopics[currentIndex - 1] as any);
-      if (currentIndex < allTopics.length - 1) setNextTopic(allTopics[currentIndex + 1] as any);
-    }
-
-    // Registrar acceso al tema
-    await updateProgress({ first_accessed_at: new Date().toISOString(), last_accessed_at: new Date().toISOString() });
-
-    setLoading(false);
-  };
-
-  const updateProgress = async (updates: Partial<TopicProgress & { first_accessed_at?: string; last_accessed_at?: string }>) => {
-    if (!profile?.id || !topicId) return;
-
-    const { data: existing } = await supabase
-      .from('topic_progress')
-      .select('id')
-      .eq('topic_id', topicId)
-      .eq('student_id', profile.id)
-      .single();
-
-    if (existing) {
-      await supabase
-        .from('topic_progress')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
-    } else {
-      await supabase
-        .from('topic_progress')
-        .insert({
+      if (existing && existing.length > 0) {
+        await supabasePatch(
+          `topic_progress?id=eq.${existing[0].id}`,
+          { ...updates, updated_at: new Date().toISOString() }
+        );
+      } else {
+        await supabasePost('topic_progress', {
           student_id: profile.id,
           topic_id: topicId,
-          unit_id: topic?.unit_id,
-          course_id: courseId,
-          ...updates
+          unit_id: topic.unit_id,
+          course_id: topic.course_id || courseId,
+          ...updates,
         });
+      }
+
+      // Reload progress
+      const newProgress = await supabaseGet(
+        `topic_progress?topic_id=eq.${topicId}&student_id=eq.${profile.id}&select=*`
+      ).catch(() => []);
+      setProgress(newProgress?.[0] || null);
+    } catch (error) {
+      console.error('[TopicViewer] Error updating progress:', error);
     }
-
-    // Recargar progreso
-    const { data: newProgress } = await supabase
-      .from('topic_progress')
-      .select('*')
-      .eq('topic_id', topicId)
-      .eq('student_id', profile.id)
-      .single();
-    
-    setProgress(newProgress);
   };
 
-  const markAsRead = async () => {
-    await updateProgress({ introduction_read: true, introduction_read_at: new Date().toISOString() } as any);
-  };
+  const markAsRead = () => updateProgressField({
+    introduction_read: true,
+    introduction_read_at: new Date().toISOString(),
+  });
 
-  const markVideoWatched = async () => {
-    await updateProgress({ video_watched: true, video_watched_at: new Date().toISOString(), video_progress_percent: 100 } as any);
-  };
+  const markVideoWatched = () => updateProgressField({
+    video_watched: true,
+    video_watched_at: new Date().toISOString(),
+    video_progress_percent: 100,
+  });
+
+  const markPdfDownloaded = () => updateProgressField({
+    pdf_downloaded: true,
+  });
+
+  const markSlidesViewed = () => updateProgressField({
+    slides_viewed: true,
+  });
 
   const markCompleted = async () => {
-    await updateProgress({ 
-      completed: true, 
+    setMarking(true);
+    await updateProgressField({
+      completed: true,
       completed_at: new Date().toISOString(),
-      completion_percent: 100 
-    } as any);
+      completion_percent: 100,
+    });
+    setMarking(false);
+  };
+
+  // Quiz handlers
+  const handleQuizAnswer = (questionId: string, optionId: string) => {
+    setQuizAnswers(prev => ({ ...prev, [questionId]: optionId }));
+  };
+
+  const submitQuiz = async () => {
+    if (!quiz || !profile?.id) return;
+
+    let totalPoints = 0;
+    let earnedPoints = 0;
+
+    quiz.questions.forEach(q => {
+      totalPoints += q.points;
+      const selected = quizAnswers[q.id];
+      if (selected) {
+        const correctOption = q.options.find(o => o.is_correct);
+        if (correctOption && selected === correctOption.id) {
+          earnedPoints += q.points;
+        }
+      }
+    });
+
+    const score = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+    const passed = score >= quiz.passing_score;
+
+    setQuizScore(score);
+    setQuizPassed(passed);
+    setQuizSubmitted(true);
+
+    // Save attempt
+    try {
+      await supabasePost('evaluation_attempts', {
+        evaluation_id: quiz.id,
+        student_id: profile.id,
+        attempt_number: previousAttempts + 1,
+        score,
+        passed,
+        answers: quizAnswers,
+        status: 'graded',
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      });
+      setPreviousAttempts(prev => prev + 1);
+
+      // If passed, update progress
+      if (passed) {
+        await updateProgressField({
+          completed: true,
+          completed_at: new Date().toISOString(),
+          completion_percent: 100,
+        });
+      }
+    } catch (error) {
+      console.error('[TopicViewer] Error saving quiz attempt:', error);
+    }
+  };
+
+  const retryQuiz = () => {
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    setQuizScore(null);
+    setQuizPassed(false);
   };
 
   if (loading) {
@@ -219,38 +384,51 @@ export default function StudentTopicPage() {
   }
 
   const videoInfo = topic.resources?.video_url ? getVideoInfo(topic.resources.video_url) : null;
+  const hasResources = topic.resources && (
+    topic.resources.introduction ||
+    topic.resources.video_url ||
+    topic.resources.pdf_url ||
+    topic.resources.slides_url
+  );
 
   return (
     <div className="min-h-screen bg-[#030712] text-white">
-      {/* Header */}
+      {/* Sticky Header */}
       <div className="sticky top-0 z-40 bg-[#030712]/95 backdrop-blur-sm border-b border-gray-800">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link 
-                href={`/dashboard/student/course/${courseId}/overview`} 
-                className="text-gray-400 hover:text-white"
+            <div className="flex items-center gap-3 min-w-0">
+              <Link
+                href={`/dashboard/student/course/${courseId}/overview`}
+                className="text-gray-400 hover:text-white flex-shrink-0"
               >
                 <ArrowLeft className="w-5 h-5" />
               </Link>
               <div className="min-w-0">
-                <p className="text-xs text-gray-500 truncate">{topic.unit?.course?.title} / {topic.unit?.title}</p>
-                <h1 className="text-lg font-bold text-white truncate">{topic.title}</h1>
+                <p className="text-xs text-gray-500 truncate">
+                  {topic.course_title} / {topic.unit_title}
+                </p>
+                <h1 className="text-base sm:text-lg font-bold text-white truncate">{topic.title}</h1>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {progress?.completed ? (
                 <span className="flex items-center gap-1.5 bg-green-500/10 text-green-400 px-3 py-1.5 rounded-full text-xs font-medium">
                   <CheckCircle className="w-4 h-4" />
-                  Completado
+                  <span className="hidden sm:inline">Completado</span>
                 </span>
               ) : (
                 <button
                   onClick={markCompleted}
-                  className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                  disabled={marking}
+                  className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                  <CheckCircle className="w-4 h-4" />
-                  Marcar como completado
+                  {marking ? (
+                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4" />
+                  )}
+                  <span className="hidden sm:inline">Marcar completado</span>
                 </button>
               )}
             </div>
@@ -258,10 +436,10 @@ export default function StudentTopicPage() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+      {/* Content Area */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Meta info */}
-        <div className="flex items-center gap-4 mb-8 text-sm text-gray-500">
+        <div className="flex flex-wrap items-center gap-3 mb-6 text-sm text-gray-500">
           <span className="flex items-center gap-1.5">
             <Clock className="w-4 h-4" />
             {topic.estimated_minutes || 30} min
@@ -269,51 +447,82 @@ export default function StudentTopicPage() {
           {topic.resources?.video_url && (
             <span className="flex items-center gap-1.5">
               <Video className="w-4 h-4" />
-              Video incluido
+              Video
             </span>
           )}
           {topic.resources?.pdf_url && (
             <span className="flex items-center gap-1.5">
               <FileText className="w-4 h-4" />
-              Material PDF
+              PDF
+            </span>
+          )}
+          {topic.resources?.slides_url && (
+            <span className="flex items-center gap-1.5">
+              <Presentation className="w-4 h-4" />
+              Diapositivas
+            </span>
+          )}
+          {quiz && (
+            <span className="flex items-center gap-1.5">
+              <HelpCircle className="w-4 h-4" />
+              Quiz
             </span>
           )}
         </div>
 
-        {/* Introduction */}
+        {/* No resources message */}
+        {!hasResources && !quiz && (
+          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-8 text-center">
+            <BookOpen className="w-12 h-12 text-gray-700 mx-auto mb-3" />
+            <h3 className="text-lg font-medium text-gray-300 mb-2">Contenido en preparación</h3>
+            <p className="text-gray-500 text-sm">El profesor aún no ha agregado recursos a este tema.</p>
+          </div>
+        )}
+
+        {/* === INTRODUCTION === */}
         {topic.resources?.introduction && (
           <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-cyan-400" />
-              Introducción
-            </h2>
-            <div 
-              className="prose prose-invert max-w-none text-gray-300"
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-cyan-400" />
+                Introducción
+              </h2>
+              {progress?.introduction_read && (
+                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Leído
+                </span>
+              )}
+            </div>
+            <div
+              className="prose prose-invert max-w-none text-gray-300 prose-headings:text-white prose-a:text-cyan-400 prose-strong:text-white prose-code:text-cyan-300 prose-pre:bg-gray-900 prose-pre:border prose-pre:border-gray-700"
               dangerouslySetInnerHTML={{ __html: topic.resources.introduction }}
             />
             {!progress?.introduction_read && (
               <button
                 onClick={markAsRead}
-                className="mt-4 text-sm text-cyan-400 hover:text-cyan-300"
+                className="mt-4 flex items-center gap-1.5 text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
               >
-                ✓ Marcar como leído
+                <CheckCircle className="w-4 h-4" />
+                Marcar como leído
               </button>
             )}
           </div>
         )}
 
-        {/* Video */}
+        {/* === VIDEO === */}
         {videoInfo?.embedUrl && (
           <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Video className="w-5 h-5 text-purple-400" />
-              Video Explicativo
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Video className="w-5 h-5 text-purple-400" />
+                Video Explicativo
+              </h2>
               {progress?.video_watched && (
-                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full">
-                  Visto
+                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Visto
                 </span>
               )}
-            </h2>
+            </div>
             <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-900">
               <iframe
                 src={videoInfo.embedUrl}
@@ -322,75 +531,349 @@ export default function StudentTopicPage() {
                 allowFullScreen
               />
             </div>
+            {topic.resources?.video_duration_seconds && (
+              <p className="text-xs text-gray-500 mt-2">
+                Duración: {Math.floor(topic.resources.video_duration_seconds / 60)}:{String(topic.resources.video_duration_seconds % 60).padStart(2, '0')} min
+              </p>
+            )}
             {!progress?.video_watched && (
               <button
                 onClick={markVideoWatched}
-                className="mt-4 text-sm text-purple-400 hover:text-purple-300"
+                className="mt-3 flex items-center gap-1.5 text-sm text-purple-400 hover:text-purple-300 transition-colors"
               >
-                ✓ Marcar video como visto
+                <CheckCircle className="w-4 h-4" />
+                Marcar video como visto
               </button>
             )}
           </div>
         )}
 
-        {/* PDF Document */}
+        {/* === PDF DOCUMENT === */}
         {topic.resources?.pdf_url && (
           <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-red-400" />
-              Material de Estudio
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-red-400" />
+                Material de Estudio (PDF)
+              </h2>
+              {progress?.pdf_downloaded && (
+                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Descargado
+                </span>
+              )}
+            </div>
+
+            {/* PDF Embed */}
+            <div className="mb-4 rounded-xl overflow-hidden border border-gray-800 bg-gray-900">
+              <iframe
+                src={topic.resources.pdf_url.includes('drive.google.com')
+                  ? topic.resources.pdf_url.replace('/view', '/preview')
+                  : `${topic.resources.pdf_url}#toolbar=1&navpanes=0`
+                }
+                className="w-full h-[500px] sm:h-[600px]"
+                title={topic.resources.pdf_title || 'Documento PDF'}
+              />
+            </div>
+
             <a
               href={topic.resources.pdf_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-red-500/30 transition-colors"
+              onClick={() => markPdfDownloaded()}
+              className="inline-flex items-center gap-3 bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 hover:border-red-500/30 transition-colors"
             >
-              <div className="w-12 h-12 bg-red-500/10 rounded-lg flex items-center justify-center">
-                <FileText className="w-6 h-6 text-red-400" />
+              <div className="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center">
+                <FileText className="w-5 h-5 text-red-400" />
               </div>
-              <div className="flex-1">
-                <p className="font-medium text-white">{topic.resources.pdf_title || 'Documento PDF'}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Haz clic para ver o descargar</p>
+              <div>
+                <p className="font-medium text-white text-sm">{topic.resources.pdf_title || 'Documento PDF'}</p>
+                <p className="text-xs text-gray-500">Abrir en nueva pestaña</p>
               </div>
-              <Download className="w-5 h-5 text-gray-400" />
+              <Download className="w-4 h-4 text-gray-400 ml-2" />
             </a>
           </div>
         )}
 
-        {/* Slides */}
+        {/* === SLIDES === */}
         {topic.resources?.slides_url && (
           <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Presentation className="w-5 h-5 text-orange-400" />
-              Presentación
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Presentation className="w-5 h-5 text-orange-400" />
+                Diapositivas
+              </h2>
+              {progress?.slides_viewed && (
+                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Visto
+                </span>
+              )}
+            </div>
+
+            {/* Slides Embed */}
+            {topic.resources.slides_provider === 'google_slides' || topic.resources.slides_url.includes('docs.google.com') ? (
+              <div className="mb-4 rounded-xl overflow-hidden border border-gray-800 bg-gray-900">
+                <iframe
+                  src={topic.resources.slides_url.includes('/embed') 
+                    ? topic.resources.slides_url 
+                    : topic.resources.slides_url.replace('/pub', '/embed').replace('/edit', '/embed')
+                  }
+                  className="w-full h-[400px] sm:h-[500px]"
+                  allowFullScreen
+                  title="Presentación"
+                />
+              </div>
+            ) : topic.resources.slides_provider === 'canva' || topic.resources.slides_url.includes('canva.com') ? (
+              <div className="mb-4 rounded-xl overflow-hidden border border-gray-800 bg-gray-900">
+                <iframe
+                  src={topic.resources.slides_url}
+                  className="w-full h-[400px] sm:h-[500px]"
+                  allowFullScreen
+                  title="Presentación Canva"
+                />
+              </div>
+            ) : null}
+
             <a
               href={topic.resources.slides_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-orange-500/30 transition-colors"
+              onClick={() => markSlidesViewed()}
+              className="inline-flex items-center gap-3 bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 hover:border-orange-500/30 transition-colors"
             >
-              <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center">
-                <Presentation className="w-6 h-6 text-orange-400" />
+              <div className="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                <Presentation className="w-5 h-5 text-orange-400" />
               </div>
-              <div className="flex-1">
-                <p className="font-medium text-white">Ver presentación</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {topic.resources.slides_provider === 'google_slides' ? 'Google Slides' : 'Presentación'}
+              <div>
+                <p className="font-medium text-white text-sm">
+                  {topic.resources.slides_provider === 'google_slides' ? 'Google Slides' :
+                   topic.resources.slides_provider === 'canva' ? 'Canva' : 'Ver presentación'}
                 </p>
+                <p className="text-xs text-gray-500">Abrir en nueva pestaña</p>
               </div>
-              <ExternalLink className="w-5 h-5 text-gray-400" />
+              <ExternalLink className="w-4 h-4 text-gray-400 ml-2" />
             </a>
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between pt-6 border-t border-gray-800 mt-8">
+        {/* === ADDITIONAL RESOURCES === */}
+        {topic.resources?.additional_resources && topic.resources.additional_resources.length > 0 && (
+          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-blue-400" />
+              Recursos Adicionales
+            </h2>
+            <div className="space-y-3">
+              {topic.resources.additional_resources.map((resource: any, i: number) => (
+                <a
+                  key={i}
+                  href={resource.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 hover:border-blue-500/30 transition-colors"
+                >
+                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                    <ExternalLink className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-white text-sm truncate">{resource.title || resource.url}</p>
+                    {resource.description && (
+                      <p className="text-xs text-gray-500 truncate">{resource.description}</p>
+                    )}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* === QUIZ SECTION === */}
+        {quiz && quiz.questions.length > 0 && (
+          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-yellow-400" />
+                {quiz.title}
+              </h2>
+              {quizSubmitted && quizPassed && (
+                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Aprobado
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4 mb-6 text-sm text-gray-500">
+              <span className="flex items-center gap-1.5">
+                <Award className="w-4 h-4" />
+                {quiz.passing_score}% para aprobar
+              </span>
+              <span className="flex items-center gap-1.5">
+                <RotateCcw className="w-4 h-4" />
+                {previousAttempts}/{quiz.max_attempts} intentos
+              </span>
+              {quiz.time_limit_minutes && (
+                <span className="flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" />
+                  {quiz.time_limit_minutes} min
+                </span>
+              )}
+            </div>
+
+            {/* Quiz Results */}
+            {quizSubmitted && (
+              <div className={`rounded-xl p-5 mb-6 border ${
+                quizPassed
+                  ? 'bg-green-500/5 border-green-500/20'
+                  : 'bg-red-500/5 border-red-500/20'
+              }`}>
+                <div className="flex items-center gap-3">
+                  {quizPassed ? (
+                    <CheckCircle className="w-8 h-8 text-green-400" />
+                  ) : (
+                    <AlertCircle className="w-8 h-8 text-red-400" />
+                  )}
+                  <div>
+                    <p className={`text-lg font-bold ${quizPassed ? 'text-green-400' : 'text-red-400'}`}>
+                      {quizScore}% — {quizPassed ? '¡Aprobado!' : 'No aprobado'}
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      {quizPassed
+                        ? '¡Excelente trabajo! Has completado este quiz.'
+                        : `Necesitas ${quiz.passing_score}% para aprobar.`}
+                    </p>
+                  </div>
+                </div>
+                {!quizPassed && previousAttempts < quiz.max_attempts && (
+                  <button
+                    onClick={retryQuiz}
+                    className="mt-4 flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Intentar de nuevo ({quiz.max_attempts - previousAttempts} restante{quiz.max_attempts - previousAttempts !== 1 ? 's' : ''})
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Quiz Start Button / Questions */}
+            {!showQuiz && !quizSubmitted && (
+              <button
+                onClick={() => setShowQuiz(true)}
+                disabled={previousAttempts >= quiz.max_attempts}
+                className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black rounded-xl px-6 py-4 font-semibold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {previousAttempts >= quiz.max_attempts
+                  ? 'Sin intentos restantes'
+                  : 'Comenzar Quiz'}
+              </button>
+            )}
+
+            {showQuiz && !quizSubmitted && (
+              <div className="space-y-6">
+                {quiz.questions.map((question, qIndex) => (
+                  <div key={question.id} className="bg-[#030712] border border-gray-800 rounded-xl p-5">
+                    <p className="font-medium text-white mb-4">
+                      <span className="text-cyan-400 mr-2">{qIndex + 1}.</span>
+                      {question.question_text}
+                    </p>
+                    <div className="space-y-2">
+                      {question.options.map((option) => (
+                        <label
+                          key={option.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            quizAnswers[question.id] === option.id
+                              ? 'border-cyan-500 bg-cyan-500/10'
+                              : 'border-gray-800 hover:border-gray-700'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={question.id}
+                            value={option.id}
+                            checked={quizAnswers[question.id] === option.id}
+                            onChange={() => handleQuizAnswer(question.id, option.id)}
+                            className="sr-only"
+                          />
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                            quizAnswers[question.id] === option.id
+                              ? 'border-cyan-500 bg-cyan-500'
+                              : 'border-gray-600'
+                          }`}>
+                            {quizAnswers[question.id] === option.id && (
+                              <div className="w-2 h-2 rounded-full bg-white" />
+                            )}
+                          </div>
+                          <span className="text-sm text-gray-300">{option.text}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  onClick={submitQuiz}
+                  disabled={Object.keys(quizAnswers).length < quiz.questions.length}
+                  className="w-full bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl px-6 py-3 font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Enviar respuestas ({Object.keys(quizAnswers).length}/{quiz.questions.length})
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* === PROGRESS SUMMARY === */}
+        <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-5 mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Tu Progreso</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {topic.resources?.introduction && (
+              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+                progress?.introduction_read ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'
+              }`}>
+                <BookOpen className="w-4 h-4" />
+                <span>Lectura</span>
+              </div>
+            )}
+            {topic.resources?.video_url && (
+              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+                progress?.video_watched ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'
+              }`}>
+                <Video className="w-4 h-4" />
+                <span>Video</span>
+              </div>
+            )}
+            {topic.resources?.pdf_url && (
+              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+                progress?.pdf_downloaded ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'
+              }`}>
+                <FileText className="w-4 h-4" />
+                <span>PDF</span>
+              </div>
+            )}
+            {topic.resources?.slides_url && (
+              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+                progress?.slides_viewed ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'
+              }`}>
+                <Presentation className="w-4 h-4" />
+                <span>Diapositivas</span>
+              </div>
+            )}
+            {quiz && (
+              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+                quizPassed ? 'bg-green-500/10 text-green-400' : 'bg-gray-800 text-gray-500'
+              }`}>
+                <HelpCircle className="w-4 h-4" />
+                <span>Quiz</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* === NAVIGATION === */}
+        <div className="flex items-center justify-between pt-6 border-t border-gray-800">
           {prevTopic ? (
             <Link
               href={`/dashboard/student/course/${courseId}/topic/${prevTopic.id}`}
-              className="flex items-center gap-3 text-gray-400 hover:text-white transition-colors"
+              className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
               <div>
@@ -399,11 +882,11 @@ export default function StudentTopicPage() {
               </div>
             </Link>
           ) : <div />}
-          
+
           {nextTopic ? (
             <Link
               href={`/dashboard/student/course/${courseId}/topic/${nextTopic.id}`}
-              className="flex items-center gap-3 text-right text-gray-400 hover:text-white transition-colors"
+              className="flex items-center gap-2 text-right text-gray-400 hover:text-white transition-colors"
             >
               <div>
                 <p className="text-xs text-gray-500">Siguiente</p>

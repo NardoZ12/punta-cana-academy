@@ -166,30 +166,28 @@ export default function StudentTopicPage() {
       // Load quiz (evaluation linked to this topic)
       try {
         const evaluations = await supabaseGet(
-          `evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=*`
+          `evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&is_published=eq.true&select=*`
         ).catch(() => []);
 
         if (evaluations && evaluations.length > 0) {
           const evalData = evaluations[0];
-          // Load questions
-          const questions = await supabaseGet(
-            `evaluation_questions?evaluation_id=eq.${evalData.id}&order=order_index.asc&select=*`
-          ).catch(() => []);
+          // Questions are stored as JSONB in evaluations.questions column
+          const questions = Array.isArray(evalData.questions) ? evalData.questions : [];
 
-          if (questions && questions.length > 0) {
+          if (questions.length > 0) {
             setQuiz({
               id: evalData.id,
               title: evalData.title || 'Quiz del Tema',
               passing_score: evalData.passing_score || 70,
               max_attempts: evalData.max_attempts || 3,
               time_limit_minutes: evalData.time_limit_minutes,
-              questions: questions.map((q: any) => ({
-                id: q.id,
-                question_text: q.question_text,
-                question_type: q.question_type || 'multiple_choice',
+              questions: questions.map((q: any, idx: number) => ({
+                id: q.id || `q-${idx}`,
+                question_text: q.question_text || q.text || q.question || '',
+                question_type: q.question_type || q.type || 'multiple_choice',
                 options: Array.isArray(q.options) ? q.options : [],
                 points: q.points || 1,
-                order_index: q.order_index,
+                order_index: q.order_index ?? idx,
               })),
             });
 

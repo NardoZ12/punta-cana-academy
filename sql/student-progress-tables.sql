@@ -201,25 +201,8 @@ CREATE POLICY "Enrolled students can view evaluations"
     )
   );
 
-DROP POLICY IF EXISTS "Enrolled students can view evaluation questions" ON evaluation_questions;
-CREATE POLICY "Enrolled students can view evaluation questions"
-  ON evaluation_questions FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM evaluations ev
-      JOIN enrollments e ON e.course_id = ev.course_id
-      WHERE ev.id = evaluation_questions.evaluation_id
-      AND e.student_id = auth.uid()
-      AND e.status = 'active'
-    )
-    OR
-    EXISTS (
-      SELECT 1 FROM evaluations ev
-      JOIN courses c ON c.id = ev.course_id
-      WHERE ev.id = evaluation_questions.evaluation_id
-      AND c.instructor_id = auth.uid()
-    )
-  );
+-- NOTA: evaluation_questions no existe como tabla separada.
+-- Las preguntas se almacenan como JSONB en evaluations.questions
 
 -- Estudiantes pueden ver y crear sus propios intentos
 DROP POLICY IF EXISTS "Students can view own attempts" ON evaluation_attempts;

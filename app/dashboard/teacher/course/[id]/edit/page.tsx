@@ -985,42 +985,72 @@ export default function EditCoursePage() {
         video_url: mainVideo?.url || null,
         video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
         video_duration_seconds: mainVideo?.duration_seconds || null,
-        pdf_url: pdfDoc?.url || null,
-        pdf_title: pdfDoc?.title || null,
-        slides_url: slidesDoc?.url || null,
-        slides_provider: slidesDoc?.url ? sanitizeSlidesProvider(slidesDoc?.provider) : null,
+        pdf_url: pdfDoc?.url?.trim() || null,
+        pdf_title: pdfDoc?.title?.trim() || null,
+        slides_url: slidesDoc?.url?.trim() || null,
+        slides_provider: slidesDoc?.url?.trim() ? sanitizeSlidesProvider(slidesDoc?.provider || 'google_slides') : null,
         is_published: data.is_published ?? false,
         additional_resources: { videos: additionalVideos || [], quiz: data.quiz || [] }
       };
 
-      console.log('[SaveResources] Payload:', JSON.stringify(payload).substring(0, 300));
+      console.log('[SaveResources] Payload pdf_url:', payload.pdf_url, '| slides_url:', payload.slides_url, '| slides_provider:', payload.slides_provider);
+      console.log('[SaveResources] Documents array:', JSON.stringify(data.documents));
 
-      // === UPSERT topic_resources (INSERT or UPDATE on conflict with topic_id UNIQUE) ===
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const upsertRes = await fetch(
-        `${supabaseUrl}/rest/v1/topic_resources?on_conflict=topic_id`,
+      // === Save topic_resources: PATCH first, then POST if no row exists ===
+      let savedResource: any = null;
+
+      // Step 1: Try PATCH (updates existing row if any)
+      const ctrlPatch = new AbortController();
+      const tPatch = setTimeout(() => ctrlPatch.abort(), 15000);
+      const patchRes = await fetch(
+        `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}`,
         {
-          method: 'POST',
-          headers: { ...headers, 'Prefer': 'return=representation,resolution=merge-duplicates' },
+          method: 'PATCH',
+          headers: { ...headers, 'Prefer': 'return=representation' },
           body: JSON.stringify(payload),
-          signal: ctrl.signal,
+          signal: ctrlPatch.signal,
         }
       );
-      clearTimeout(t);
+      clearTimeout(tPatch);
+      const patchBody = await patchRes.text();
+      console.log('[SaveResources] PATCH response:', patchRes.status, patchBody.substring(0, 200));
 
-      const upsertBody = await upsertRes.text();
-      console.log('[SaveResources] Upsert response:', upsertRes.status, upsertBody.substring(0, 200));
-
-      if (!upsertRes.ok) {
-        throw new Error(`Error ${upsertRes.status}: ${upsertBody}`);
+      if (patchRes.ok) {
+        try {
+          const parsed = JSON.parse(patchBody);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            savedResource = parsed[0];
+            console.log('[SaveResources] PATCH updated existing row:', savedResource.id);
+          }
+        } catch { /* empty response means no matching row */ }
       }
 
-      let savedResource: any = null;
-      try {
-        const parsed = JSON.parse(upsertBody);
-        savedResource = Array.isArray(parsed) ? parsed[0] : parsed;
-      } catch { /* ignore parse error */ }
+      // Step 2: If PATCH didn't match a row, INSERT new
+      if (!savedResource) {
+        console.log('[SaveResources] No existing row, inserting new...');
+        const ctrlPost = new AbortController();
+        const tPost = setTimeout(() => ctrlPost.abort(), 15000);
+        const postRes = await fetch(
+          `${supabaseUrl}/rest/v1/topic_resources`,
+          {
+            method: 'POST',
+            headers: { ...headers, 'Prefer': 'return=representation' },
+            body: JSON.stringify(payload),
+            signal: ctrlPost.signal,
+          }
+        );
+        clearTimeout(tPost);
+        const postBody = await postRes.text();
+        console.log('[SaveResources] POST response:', postRes.status, postBody.substring(0, 200));
+
+        if (!postRes.ok) {
+          throw new Error(`Error ${postRes.status}: ${postBody}`);
+        }
+        try {
+          const parsed = JSON.parse(postBody);
+          savedResource = Array.isArray(parsed) ? parsed[0] : parsed;
+        } catch { /* parse error */ }
+      }
 
       console.log('[SaveResources] Saved resource id:', savedResource?.id);
 

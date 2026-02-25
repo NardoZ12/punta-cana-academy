@@ -449,32 +449,39 @@ export default function TopicResourceEditor({
       provider: 'unknown',
       embedUrl: null
     };
-    setData({ ...data, videos: [...data.videos, newVideo] });
+    setData(prev => ({ ...prev, videos: [...prev.videos, newVideo] }));
   };
 
   const updateVideo = (index: number, updated: VideoResource) => {
-    const newVideos = [...data.videos];
-    newVideos[index] = updated;
-    setData({ ...data, videos: newVideos });
+    setData(prev => {
+      const newVideos = [...prev.videos];
+      newVideos[index] = updated;
+      return { ...prev, videos: newVideos };
+    });
   };
 
   const removeVideo = (index: number) => {
-    setData({ ...data, videos: data.videos.filter((_, i) => i !== index) });
+    setData(prev => ({ ...prev, videos: prev.videos.filter((_, i) => i !== index) }));
   };
 
-  // Handler de documentos
+  // Handler de documentos — use functional updater to avoid stale closure
   const updateDocument = (type: 'pdf' | 'slides', field: string, value: string) => {
-    const existing = data.documents.find(d => d.type === type);
-    const updated: DocumentResource = existing 
-      ? { ...existing, [field]: value }
-      : { type, url: '', title: '', [field]: value };
-    
-    setData({
-      ...data,
-      documents: [
-        ...data.documents.filter(d => d.type !== type),
-        updated
-      ]
+    setData(prev => {
+      const existing = prev.documents.find(d => d.type === type);
+      const defaults: DocumentResource = type === 'slides'
+        ? { type, url: '', title: '', provider: 'google_slides' }
+        : { type, url: '', title: '' };
+      const updated: DocumentResource = existing 
+        ? { ...existing, [field]: value }
+        : { ...defaults, [field]: value };
+      
+      return {
+        ...prev,
+        documents: [
+          ...prev.documents.filter(d => d.type !== type),
+          updated
+        ]
+      };
     });
   };
 
@@ -500,7 +507,7 @@ export default function TopicResourceEditor({
   const tabs = [
     { id: 'content', label: 'Contenido', icon: FileText, count: null },
     { id: 'videos', label: 'Videos', icon: Video, count: data.videos.length },
-    { id: 'docs', label: 'Documentos', icon: Presentation, count: data.documents.length },
+    { id: 'docs', label: 'Documentos', icon: Presentation, count: data.documents.filter(d => d.url).length },
     { id: 'quiz', label: 'Quiz', icon: HelpCircle, count: data.quiz.length },
   ] as const;
 

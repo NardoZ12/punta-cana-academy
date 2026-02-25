@@ -288,6 +288,7 @@ export default function EditCoursePage() {
         clearTimeout(t0);
       }
 
+      // 1) Save course data
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
@@ -306,17 +307,80 @@ export default function EditCoursePage() {
         })
       });
       clearTimeout(t);
-      console.log('[SaveCourse] Response:', res.status);
-      
+      console.log('[SaveCourse] Course response:', res.status);
+
+      if (!res.ok) {
+        const body = await res.text();
+        console.error('[SaveCourse] Course error:', body);
+        setSaving(false);
+        alert('❌ Error al guardar curso: ' + body);
+        return;
+      }
+
+      // 2) Save all units
+      const unitErrors: string[] = [];
+      for (const unit of units) {
+        try {
+          const uc = new AbortController();
+          const ut = setTimeout(() => uc.abort(), 15000);
+          const ur = await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
+            method: 'PATCH', headers, signal: uc.signal,
+            body: JSON.stringify({
+              title: unit.title,
+              description: unit.description,
+              learning_objectives: unit.learning_objectives,
+              estimated_hours: unit.estimated_hours,
+              is_published: unit.is_published,
+              order_index: unit.order_index
+            })
+          });
+          clearTimeout(ut);
+          console.log('[SaveCourse] Unit', unit.title, 'response:', ur.status);
+          if (!ur.ok) {
+            const ub = await ur.text();
+            unitErrors.push(`Unidad "${unit.title}": ${ub}`);
+          }
+        } catch (ue: any) {
+          unitErrors.push(`Unidad "${unit.title}": ${ue.message}`);
+        }
+
+        // 3) Save all topics in this unit
+        if (unit.topics && unit.topics.length > 0) {
+          for (const topic of unit.topics) {
+            try {
+              const tc = new AbortController();
+              const tt = setTimeout(() => tc.abort(), 15000);
+              const tr = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
+                method: 'PATCH', headers, signal: tc.signal,
+                body: JSON.stringify({
+                  title: topic.title,
+                  estimated_minutes: topic.estimated_minutes,
+                  is_published: topic.is_published,
+                  order_index: topic.order_index
+                })
+              });
+              clearTimeout(tt);
+              console.log('[SaveCourse] Topic', topic.title, 'response:', tr.status);
+              if (!tr.ok) {
+                const tb = await tr.text();
+                unitErrors.push(`Tema "${topic.title}": ${tb}`);
+              }
+            } catch (te: any) {
+              unitErrors.push(`Tema "${topic.title}": ${te.message}`);
+            }
+          }
+        }
+      }
+
       setSaving(false);
-      
-      if (res.ok) {
+
+      if (unitErrors.length > 0) {
+        console.error('[SaveCourse] Partial errors:', unitErrors);
+        await revalidateAfterCourseUpdate(courseId);
+        alert('⚠️ Curso guardado, pero hubo errores en unidades/temas:\n' + unitErrors.join('\n'));
+      } else {
         await revalidateAfterCourseUpdate(courseId);
         alert('✅ Cambios guardados correctamente');
-      } else {
-        const body = await res.text();
-        console.error('[SaveCourse] Error:', body);
-        alert('❌ Error al guardar: ' + body);
       }
     } catch (err: any) {
       console.error('[SaveCourse] Error:', err);

@@ -13,6 +13,7 @@ import {
 import TopicResourceEditor, { TopicResourceData } from '@/components/teacher/TopicResourceEditor';
 import { getVideoInfo } from '@/utils/videoEmbed';
 import { useRevalidate } from '@/hooks/useRevalidate';
+import { getSupabaseHeaders } from '@/utils/supabase/fetch';
 
 // Tipos
 interface CourseUnit {
@@ -706,7 +707,7 @@ export default function EditCoursePage() {
       return;
     }
 
-    // 2. Crear los recursos del tema via RPC
+    // 2. Crear los recursos del tema via REST directo (bypass supabase-js que cuelga)
     const mainVideo = newTopicData.videos[0];
     const additionalVideos = newTopicData.videos.slice(1);
     const pdfDoc = newTopicData.documents.find(d => d.type === 'pdf');
@@ -721,31 +722,43 @@ export default function EditCoursePage() {
       return ['google_slides','canva','pdf','custom'].includes(p) ? p : 'custom';
     };
 
-    const { data: resourceData, error: resError } = await supabase.rpc('save_topic_resources', {
-      p_topic_id: topicData.id,
-      p_unit_id: newTopicData.unitId,
-      p_course_id: courseId,
-      p_introduction: newTopicData.introduction || ' ',
-      p_introduction_format: 'markdown',
-      p_video_url: mainVideo?.url || null,
-      p_video_provider: mainVideo?.url ? sanitizeVP(mainVideo?.provider) : null,
-      p_video_duration_seconds: mainVideo?.duration_seconds || null,
-      p_pdf_url: pdfDoc?.url || null,
-      p_pdf_title: pdfDoc?.title || null,
-      p_slides_url: slidesDoc?.url || null,
-      p_slides_provider: slidesDoc?.url ? sanitizeSP(slidesDoc?.provider) : null,
-      p_is_published: newTopicData.is_published ?? false,
-      p_additional_resources: {
-        videos: additionalVideos || [],
-        quiz: newTopicData.quiz || []
+    let parsedResource = null;
+    try {
+      const { url: sUrl, headers: sHeaders } = await getSupabaseHeaders();
+      const resourcePayload = {
+        topic_id: topicData.id,
+        unit_id: newTopicData.unitId,
+        course_id: courseId,
+        introduction: newTopicData.introduction || ' ',
+        introduction_format: 'markdown',
+        video_url: mainVideo?.url || null,
+        video_provider: mainVideo?.url ? sanitizeVP(mainVideo?.provider) : null,
+        video_duration_seconds: mainVideo?.duration_seconds || null,
+        pdf_url: pdfDoc?.url || null,
+        pdf_title: pdfDoc?.title || null,
+        slides_url: slidesDoc?.url || null,
+        slides_provider: slidesDoc?.url ? sanitizeSP(slidesDoc?.provider) : null,
+        is_published: newTopicData.is_published ?? false,
+        additional_resources: { videos: additionalVideos || [], quiz: newTopicData.quiz || [] }
+      };
+      const ctrlR = new AbortController();
+      const tR = setTimeout(() => ctrlR.abort(), 15000);
+      const resInsert = await fetch(`${sUrl}/rest/v1/topic_resources`, {
+        method: 'POST',
+        headers: { ...sHeaders, 'Prefer': 'return=representation' },
+        body: JSON.stringify(resourcePayload),
+        signal: ctrlR.signal,
+      });
+      clearTimeout(tR);
+      const resBody = await resInsert.json();
+      if (!resInsert.ok) {
+        console.error('[CreateTopic] Resource insert error:', resInsert.status, resBody);
+      } else {
+        parsedResource = resBody?.[0] || resBody;
       }
-    });
-
-    if (resError) {
-      console.error('[CreateTopic] RPC resource error:', resError);
+    } catch (resErr: any) {
+      console.error('[CreateTopic] Resource insert error:', resErr);
     }
-
-    const parsedResource = resourceData ? (typeof resourceData === 'string' ? JSON.parse(resourceData) : resourceData) : null;
 
     // 3. Actualizar estado local
     setUnits(units.map(u => u.id === newTopicData.unitId ? {
@@ -784,106 +797,92 @@ export default function EditCoursePage() {
     console.log('[SaveResources] Starting save for topic:', topicId);
 
     try {
-      // Get auth token for direct fetch
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const { url: supabaseUrl, headers } = await getSupabaseHeaders();
 
-      if (!token || !supabaseUrl || !supabaseKey) {
-        throw new Error('Missing auth token or Supabase config');
-      }
-
-      console.log('[SaveResources] Got token, calling API...');
-
-      const rpcPayload = {
-        p_topic_id: topicId,
-        p_unit_id: topic.unit_id,
-        p_course_id: courseId,
-        p_introduction: data.introduction || ' ',
-        p_introduction_format: data.introduction_format || 'markdown',
-        p_video_url: mainVideo?.url || null,
-        p_video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
-        p_video_duration_seconds: mainVideo?.duration_seconds || null,
-        p_pdf_url: pdfDoc?.url || null,
-        p_pdf_title: pdfDoc?.title || null,
-        p_slides_url: slidesDoc?.url || null,
-        p_slides_provider: slidesDoc?.url ? sanitizeSlidesProvider(slidesDoc?.provider) : null,
-        p_is_published: data.is_published ?? false,
-        p_additional_resources: {
-          videos: additionalVideos || [],
-          quiz: data.quiz || []
-        }
+      const payload = {
+        topic_id: topicId,
+        unit_id: topic.unit_id,
+        course_id: courseId,
+        introduction: data.introduction || ' ',
+        introduction_format: data.introduction_format || 'markdown',
+        video_url: mainVideo?.url || null,
+        video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
+        video_duration_seconds: mainVideo?.duration_seconds || null,
+        pdf_url: pdfDoc?.url || null,
+        pdf_title: pdfDoc?.title || null,
+        slides_url: slidesDoc?.url || null,
+        slides_provider: slidesDoc?.url ? sanitizeSlidesProvider(slidesDoc?.provider) : null,
+        is_published: data.is_published ?? false,
+        additional_resources: { videos: additionalVideos || [], quiz: data.quiz || [] }
       };
 
-      // Use direct fetch with AbortController timeout (15s)
-      // This bypasses supabase-js client which may have connection issues
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      console.log('[SaveResources] Payload ready, checking existing...');
 
-      let response: Response;
-      let responseText: string;
+      // 1. Check if resource row already exists
+      const ctrl1 = new AbortController();
+      const t1 = setTimeout(() => ctrl1.abort(), 15000);
+      const checkRes = await fetch(
+        `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}&select=id`,
+        { headers, signal: ctrl1.signal }
+      );
+      clearTimeout(t1);
+      const existing = await checkRes.json();
+      console.log('[SaveResources] Existing check:', existing);
 
-      try {
-        // Try RPC first
-        console.log('[SaveResources] Attempting RPC...');
-        response = await fetch(`${supabaseUrl}/rest/v1/rpc/save_topic_resources`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${token}`,
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(rpcPayload),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-        responseText = await response.text();
-        console.log('[SaveResources] RPC response status:', response.status, 'body:', responseText);
-      } catch (fetchErr: any) {
-        clearTimeout(timeout);
-        if (fetchErr.name === 'AbortError') {
-          console.warn('[SaveResources] RPC timed out after 15s, trying direct INSERT/UPDATE...');
-          // Fallback: try direct table operation via REST API
-          const fallbackResult = await saveResourceDirectREST(
-            supabaseUrl, supabaseKey, token, topicId, topic.unit_id, rpcPayload
-          );
-          if (fallbackResult) {
-            setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: fallbackResult as TopicResources } : t) })));
+      let savedResource: any = null;
+
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 15000);
+
+      if (Array.isArray(existing) && existing.length > 0) {
+        // 2a. PATCH existing
+        console.log('[SaveResources] Updating existing resource:', existing[0].id);
+        const updateRes = await fetch(
+          `${supabaseUrl}/rest/v1/topic_resources?id=eq.${existing[0].id}`,
+          {
+            method: 'PATCH',
+            headers: { ...headers, 'Prefer': 'return=representation' },
+            body: JSON.stringify(payload),
+            signal: ctrl2.signal,
           }
-          setEditingResources(null);
-          console.log('[SaveResources] Done via fallback!');
-          return;
+        );
+        clearTimeout(t2);
+        const body = await updateRes.json();
+        if (!updateRes.ok) {
+          console.error('[SaveResources] PATCH error:', updateRes.status, body);
+          throw new Error(body?.message || `Error ${updateRes.status}`);
         }
-        throw fetchErr;
+        savedResource = body?.[0] || body;
+      } else {
+        // 2b. POST new
+        console.log('[SaveResources] Inserting new resource');
+        const insertRes = await fetch(
+          `${supabaseUrl}/rest/v1/topic_resources`,
+          {
+            method: 'POST',
+            headers: { ...headers, 'Prefer': 'return=representation' },
+            body: JSON.stringify(payload),
+            signal: ctrl2.signal,
+          }
+        );
+        clearTimeout(t2);
+        const body = await insertRes.json();
+        if (!insertRes.ok) {
+          console.error('[SaveResources] POST error:', insertRes.status, body);
+          throw new Error(body?.message || `Error ${insertRes.status}`);
+        }
+        savedResource = body?.[0] || body;
       }
 
-      if (!response.ok) {
-        console.error('[SaveResources] RPC failed:', response.status, responseText);
-        // If RPC function doesn't exist (404), fall back to direct REST
-        if (response.status === 404 || responseText.includes('function') || responseText.includes('not found')) {
-          console.warn('[SaveResources] RPC function not found, using direct REST...');
-          const fallbackResult = await saveResourceDirectREST(
-            supabaseUrl, supabaseKey, token, topicId, topic.unit_id, rpcPayload
-          );
-          if (fallbackResult) {
-            setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: fallbackResult as TopicResources } : t) })));
-          }
-          setEditingResources(null);
-          console.log('[SaveResources] Done via fallback!');
-          return;
-        }
-        throw new Error(`Error ${response.status}: ${responseText}`);
-      }
+      console.log('[SaveResources] Saved:', savedResource);
 
-      // Parse RPC result
-      const result = responseText ? JSON.parse(responseText) : null;
-      console.log('[SaveResources] Parsed result:', result);
-
-      if (result) {
-        const savedResource = typeof result === 'string' ? JSON.parse(result) : result;
-        setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t) })));
+      if (savedResource) {
+        setUnits(units.map(u => ({
+          ...u,
+          topics: u.topics?.map(t =>
+            t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t
+          )
+        })));
       }
 
       setEditingResources(null);
@@ -892,81 +891,6 @@ export default function EditCoursePage() {
       console.error('[SaveResources] Error:', err);
       alert('Error al guardar: ' + (err?.message || 'Error desconocido'));
       throw err;
-    }
-  };
-
-  // Fallback: direct REST API calls to topic_resources table
-  const saveResourceDirectREST = async (
-    supabaseUrl: string, supabaseKey: string, token: string,
-    topicId: string, unitId: string, rpcPayload: any
-  ) => {
-    const headers = {
-      'Content-Type': 'application/json',
-      'apikey': supabaseKey,
-      'Authorization': `Bearer ${token}`,
-      'Prefer': 'return=representation'
-    };
-
-    const payload = {
-      topic_id: topicId,
-      unit_id: unitId,
-      course_id: courseId,
-      introduction: rpcPayload.p_introduction,
-      introduction_format: rpcPayload.p_introduction_format,
-      video_url: rpcPayload.p_video_url,
-      video_provider: rpcPayload.p_video_provider,
-      video_duration_seconds: rpcPayload.p_video_duration_seconds,
-      pdf_url: rpcPayload.p_pdf_url,
-      pdf_title: rpcPayload.p_pdf_title,
-      slides_url: rpcPayload.p_slides_url,
-      slides_provider: rpcPayload.p_slides_provider,
-      is_published: rpcPayload.p_is_published,
-      additional_resources: JSON.stringify(rpcPayload.p_additional_resources)
-    };
-
-    // Check if exists (with 10s timeout)
-    const ctrl1 = new AbortController();
-    const t1 = setTimeout(() => ctrl1.abort(), 10000);
-    try {
-      const checkRes = await fetch(
-        `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}&select=id`,
-        { headers, signal: ctrl1.signal }
-      );
-      clearTimeout(t1);
-      const existing = await checkRes.json();
-      console.log('[SaveResources-Fallback] Existing check:', existing);
-
-      const ctrl2 = new AbortController();
-      const t2 = setTimeout(() => ctrl2.abort(), 10000);
-
-      if (existing && existing.length > 0) {
-        // PATCH (update)
-        const updateRes = await fetch(
-          `${supabaseUrl}/rest/v1/topic_resources?id=eq.${existing[0].id}`,
-          { method: 'PATCH', headers, body: JSON.stringify(payload), signal: ctrl2.signal }
-        );
-        clearTimeout(t2);
-        const updated = await updateRes.json();
-        console.log('[SaveResources-Fallback] Updated:', updated);
-        return updated?.[0] || updated;
-      } else {
-        // POST (insert)
-        const insertRes = await fetch(
-          `${supabaseUrl}/rest/v1/topic_resources`,
-          { method: 'POST', headers, body: JSON.stringify(payload), signal: ctrl2.signal }
-        );
-        clearTimeout(t2);
-        const inserted = await insertRes.json();
-        console.log('[SaveResources-Fallback] Inserted:', inserted);
-        return inserted?.[0] || inserted;
-      }
-    } catch (fallbackErr: any) {
-      clearTimeout(t1);
-      console.error('[SaveResources-Fallback] Error:', fallbackErr);
-      if (fallbackErr.name === 'AbortError') {
-        throw new Error('La operación tardó demasiado. Posible problema de conexión con la base de datos. Intenta recargar la página.');
-      }
-      throw fallbackErr;
     }
   };
 

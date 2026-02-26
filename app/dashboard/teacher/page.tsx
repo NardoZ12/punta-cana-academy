@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
+import { getSupabaseHeaders } from '@/utils/supabase/fetch';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { 
   Users, 
@@ -392,19 +393,10 @@ export default function TeacherDashboard() {
       setCourseStudents([]);
       return;
     }
-    // Use direct fetch instead of supabase.from() to avoid hanging
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const headers = {
-      'Content-Type': 'application/json',
-      'apikey': supabaseKey,
-      'Authorization': `Bearer ${token}`,
-    };
-
     try {
+      // Use getSupabaseHeaders with built-in 5s timeout on getSession
+      const { url: supabaseUrl, headers } = await getSupabaseHeaders();
+
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 10000);
       const enrollRes = await fetch(
@@ -465,104 +457,120 @@ export default function TeacherDashboard() {
     if (!selectAllStudents && selectedStudentIds.size === 0) return alert('Seleccione al menos un estudiante');
     
     setSubmitting(true);
+    console.log('[handleCreateTask] Iniciando...');
     
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const fetchHeaders = {
-      'Content-Type': 'application/json',
-      'apikey': supabaseKey,
-      'Authorization': `Bearer ${token}`,
-    };
-    
-    // Payload para la función RPC create_assignment
-    const rpcPayload = {
-      p_course_id: taskCourseId,
-      p_title: taskData.title,
-      p_description: taskData.description || '',
-      p_due_date: taskData.date ? new Date(taskData.date).toISOString() : null,
-      p_assignment_type: taskData.assignment_type,
-      p_max_points: taskData.max_points,
-      p_max_file_size_mb: taskData.max_file_size_mb,
-      p_allowed_file_types: taskData.allowed_file_types,
-      p_rubric: taskData.rubric || null,
-      p_attached_files: taskData.attached_links.length > 0 
-        ? taskData.attached_links.map(url => ({ type: 'link', url })) 
-        : null,
-      p_target_type: selectAllStudents ? 'all_students' : 'specific_students',
-      p_target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
-      p_is_published: true
-    };
-
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 15000);
     try {
-      // Intentar via RPC (SECURITY DEFINER - bypasses RLS + crea notificaciones)
-      let res = await fetch(`${supabaseUrl}/rest/v1/rpc/create_assignment`, {
-        method: 'POST', 
-        headers: { ...fetchHeaders, 'Prefer': '' }, 
-        signal: ctrl.signal,
-        body: JSON.stringify(rpcPayload)
-      });
-
-      // Fallback: si RPC no existe (404), usar POST directo a la tabla
-      if (res.status === 404) {
-        console.warn('[handleCreateTask] RPC create_assignment no existe, usando POST directo');
-        const directPayload = {
-          course_id: taskCourseId,
-          title: taskData.title,
-          description: taskData.description,
-          due_date: taskData.date ? new Date(taskData.date).toISOString() : null,
-          assignment_type: taskData.assignment_type,
-          max_points: taskData.max_points,
-          max_file_size_mb: taskData.max_file_size_mb,
-          allowed_file_types: taskData.allowed_file_types,
-          rubric: taskData.rubric || null,
-          attached_files: taskData.attached_links.length > 0 
-            ? taskData.attached_links.map(url => ({ type: 'link', url })) 
-            : null,
-          target_type: selectAllStudents ? 'all_students' : 'specific_students',
-          target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
-          is_published: true
-        };
-        res = await fetch(`${supabaseUrl}/rest/v1/assignments`, {
-          method: 'POST', 
-          headers: { ...fetchHeaders, 'Prefer': 'return=representation' }, 
-          signal: ctrl.signal,
-          body: JSON.stringify(directPayload)
-        });
-      }
-      clearTimeout(timeout);
+      // Obtener headers con timeout protegido (5s en getSession)
+      const { url: supabaseUrl, headers: fetchHeaders } = await getSupabaseHeaders();
+      console.log('[handleCreateTask] Headers obtenidos OK');
       
-      setSubmitting(false);
-      if (!res.ok) {
-        const body = await res.text();
-        console.error('[handleCreateTask] Error response:', res.status, body);
-        alert('Error al crear tarea: ' + body);
-      } else {
-        const result = await res.json();
-        const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
-        const notifCount = result?.notifications_sent || 0;
-        alert(`✓ Tarea creada y asignada a ${studentCount} estudiante(s)${notifCount > 0 ? `. ${notifCount} notificación(es) enviada(s).` : ''}`);
-        setIsTaskModalOpen(false);
-        setTaskData({ 
-          title: '', description: '', date: '', assignment_type: 'file_upload',
-          max_points: 100, max_file_size_mb: 10, allowed_file_types: ['pdf', 'doc'],
-          rubric: '', attached_links: [], newLink: ''
+      // Payload para la función RPC create_assignment
+      const rpcPayload = {
+        p_course_id: taskCourseId,
+        p_title: taskData.title,
+        p_description: taskData.description || '',
+        p_due_date: taskData.date ? new Date(taskData.date).toISOString() : null,
+        p_assignment_type: taskData.assignment_type,
+        p_max_points: taskData.max_points,
+        p_max_file_size_mb: taskData.max_file_size_mb,
+        p_allowed_file_types: taskData.allowed_file_types,
+        p_rubric: taskData.rubric || null,
+        p_attached_files: taskData.attached_links.length > 0 
+          ? taskData.attached_links.map(url => ({ type: 'link', url })) 
+          : null,
+        p_target_type: selectAllStudents ? 'all_students' : 'specific_students',
+        p_target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
+        p_is_published: true
+      };
+      console.log('[handleCreateTask] Payload:', JSON.stringify(rpcPayload).substring(0, 200));
+
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 15000);
+      
+      try {
+        // Intentar via RPC (SECURITY DEFINER - bypasses RLS + crea notificaciones)
+        // Remove Prefer header for RPC calls returning JSONB
+        const rpcHeaders = { ...fetchHeaders };
+        delete (rpcHeaders as any)['Prefer'];
+        
+        console.log('[handleCreateTask] Llamando RPC create_assignment...');
+        let res = await fetch(`${supabaseUrl}/rest/v1/rpc/create_assignment`, {
+          method: 'POST', 
+          headers: rpcHeaders, 
+          signal: ctrl.signal,
+          body: JSON.stringify(rpcPayload)
         });
-        setTaskCourseId('');
-        setSelectAllStudents(true);
-        setSelectedStudentIds(new Set());
-        setCourseStudents([]);
-        window.location.reload();
+        console.log('[handleCreateTask] RPC respondió:', res.status);
+
+        // Fallback: si RPC no existe (404), usar POST directo a la tabla
+        if (res.status === 404) {
+          console.warn('[handleCreateTask] RPC no existe, usando POST directo');
+          const directPayload = {
+            course_id: taskCourseId,
+            title: taskData.title,
+            description: taskData.description,
+            due_date: taskData.date ? new Date(taskData.date).toISOString() : null,
+            assignment_type: taskData.assignment_type,
+            max_points: taskData.max_points,
+            max_file_size_mb: taskData.max_file_size_mb,
+            allowed_file_types: taskData.allowed_file_types,
+            rubric: taskData.rubric || null,
+            attached_files: taskData.attached_links.length > 0 
+              ? taskData.attached_links.map(url => ({ type: 'link', url })) 
+              : null,
+            target_type: selectAllStudents ? 'all_students' : 'specific_students',
+            target_student_ids: selectAllStudents ? null : Array.from(selectedStudentIds),
+            is_published: true,
+            created_by: fetchHeaders['Authorization']?.split('Bearer ')?.[1] ? undefined : undefined
+          };
+          res = await fetch(`${supabaseUrl}/rest/v1/assignments`, {
+            method: 'POST', 
+            headers: { ...fetchHeaders, 'Prefer': 'return=representation' }, 
+            signal: ctrl.signal,
+            body: JSON.stringify(directPayload)
+          });
+          console.log('[handleCreateTask] POST directo respondió:', res.status);
+        }
+        clearTimeout(timeout);
+        
+        if (!res.ok) {
+          const body = await res.text();
+          console.error('[handleCreateTask] Error response:', res.status, body);
+          alert('Error al crear tarea: ' + body);
+        } else {
+          let result: any = {};
+          try {
+            const text = await res.text();
+            console.log('[handleCreateTask] Response body:', text.substring(0, 300));
+            result = text ? JSON.parse(text) : {};
+          } catch (parseErr) {
+            console.warn('[handleCreateTask] No se pudo parsear JSON:', parseErr);
+          }
+          const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;
+          const notifCount = result?.notifications_sent || 0;
+          alert(`✓ Tarea creada y asignada a ${studentCount} estudiante(s)${notifCount > 0 ? `. ${notifCount} notificación(es) enviada(s).` : ''}`);
+          setIsTaskModalOpen(false);
+          setTaskData({ 
+            title: '', description: '', date: '', assignment_type: 'file_upload',
+            max_points: 100, max_file_size_mb: 10, allowed_file_types: ['pdf', 'doc'],
+            rubric: '', attached_links: [], newLink: ''
+          });
+          setTaskCourseId('');
+          setSelectAllStudents(true);
+          setSelectedStudentIds(new Set());
+          setCourseStudents([]);
+          window.location.reload();
+        }
+      } catch (fetchErr: any) {
+        clearTimeout(timeout);
+        console.error('[handleCreateTask] Fetch exception:', fetchErr);
+        alert('Error de red: ' + (fetchErr.name === 'AbortError' ? 'Timeout - intente de nuevo' : fetchErr.message));
       }
-    } catch (err: any) {
-      clearTimeout(timeout);
+    } catch (headerErr: any) {
+      console.error('[handleCreateTask] No se pudo obtener sesión:', headerErr);
+      alert('Error de sesión: ' + headerErr.message + '. Recargue la página.');
+    } finally {
       setSubmitting(false);
-      console.error('[handleCreateTask] Exception:', err);
-      alert('Error: ' + err.message);
     }
   };
 
@@ -571,17 +579,8 @@ export default function TeacherDashboard() {
     if (!selectAllStudents && selectedStudentIds.size === 0) return alert('Seleccione al menos un estudiante');
     
     setSubmitting(true);
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const fetchHeaders = {
-      'Content-Type': 'application/json',
-      'apikey': supabaseKey,
-      'Authorization': `Bearer ${token}`,
-      'Prefer': 'return=representation'
-    };
+    try {
+    const { url: supabaseUrl, headers: fetchHeaders } = await getSupabaseHeaders();
 
     // Calcular puntos totales
     const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
@@ -665,8 +664,12 @@ export default function TeacherDashboard() {
       clearTimeout(timeout);
       alert('Error: ' + err.message);
     }
-
-    setSubmitting(false);
+    } catch (headerErr: any) {
+      console.error('[handleCreateExam] No se pudo obtener sesión:', headerErr);
+      alert('Error de sesión: ' + headerErr.message);
+    } finally {
+      setSubmitting(false);
+    }
     
     if (success) {
       const studentCount = selectAllStudents ? courseStudents.length : selectedStudentIds.size;

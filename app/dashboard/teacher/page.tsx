@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/utils/supabase/client';
-import { getSupabaseHeaders } from '@/utils/supabase/fetch';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { 
   Users, 
@@ -99,7 +97,23 @@ const QUESTION_TYPES = [
 ];
 
 export default function TeacherDashboard() {
-  const { user, profile, loading: authLoading } = useAuthContext();
+  const { user, profile, session, loading: authLoading } = useAuthContext();
+
+  // Helper: obtener headers usando session del contexto (evita getSession que cuelga)
+  const getAuthHeaders = () => {
+    const token = session?.access_token;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    if (!token) throw new Error('No hay sesión activa. Recarga la página.');
+    return {
+      supabaseUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${token}`,
+      }
+    };
+  };
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
@@ -164,6 +178,11 @@ export default function TeacherDashboard() {
       return;
     }
 
+    if (!session?.access_token) {
+      // Session not ready yet, will retry when it arrives
+      return;
+    }
+
     if (profile.user_type !== 'teacher') {
       setError('No tienes permisos de profesor');
       setLoading(false);
@@ -176,20 +195,10 @@ export default function TeacherDashboard() {
 
     async function loadTeacherData() {
       try {
-        // Use direct fetch to avoid supabase-js client hanging issues
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        // Use session from AuthContext directly - avoids getSession() hanging
+        const { supabaseUrl, headers } = getAuthHeaders();
 
         console.log('[TeacherDashboard] Loading courses for user:', user!.id);
-
-        const headers = {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${token}`,
-        };
 
         // Fetch courses via direct REST
         const ctrl = new AbortController();
@@ -270,22 +279,18 @@ export default function TeacherDashboard() {
     
     loadTeacherData();
     return () => { mounted = false; };
-  }, [authLoading, user, profile]);
+  }, [authLoading, user, profile, session]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
     
     async function loadCourseDetails() {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-      const headers = {
-        'Content-Type': 'application/json',
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${token}`,
-      };
+      let supabaseUrl: string, headers: Record<string, string>;
+      try {
+        const auth = getAuthHeaders();
+        supabaseUrl = auth.supabaseUrl;
+        headers = auth.headers;
+      } catch { return; }
 
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
@@ -394,8 +399,7 @@ export default function TeacherDashboard() {
       return;
     }
     try {
-      // Use getSupabaseHeaders with built-in 5s timeout on getSession
-      const { url: supabaseUrl, headers } = await getSupabaseHeaders();
+      const { supabaseUrl, headers } = getAuthHeaders();
 
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 10000);
@@ -460,8 +464,7 @@ export default function TeacherDashboard() {
     console.log('[handleCreateTask] Iniciando...');
     
     try {
-      // Obtener headers con timeout protegido (5s en getSession)
-      const { url: supabaseUrl, headers: fetchHeaders } = await getSupabaseHeaders();
+      const { supabaseUrl, headers: fetchHeaders } = getAuthHeaders();
       console.log('[handleCreateTask] Headers obtenidos OK');
       
       // Payload para la función RPC create_assignment
@@ -580,7 +583,7 @@ export default function TeacherDashboard() {
     
     setSubmitting(true);
     try {
-    const { url: supabaseUrl, headers: fetchHeaders } = await getSupabaseHeaders();
+    const { supabaseUrl, headers: fetchHeaders } = getAuthHeaders();
 
     // Calcular puntos totales
     const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);

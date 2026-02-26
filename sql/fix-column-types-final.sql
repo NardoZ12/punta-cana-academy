@@ -3,7 +3,9 @@
 -- Ejecutar en Supabase SQL Editor
 -- ============================================================
 
--- 1. allowed_file_types: text[] → JSONB
+-- 1. allowed_file_types: text[] → JSONB (drop default first to avoid cast error)
+ALTER TABLE public.assignments ALTER COLUMN allowed_file_types DROP DEFAULT;
+
 ALTER TABLE public.assignments 
   ALTER COLUMN allowed_file_types TYPE JSONB 
   USING to_jsonb(allowed_file_types);
@@ -11,10 +13,14 @@ ALTER TABLE public.assignments
 ALTER TABLE public.assignments 
   ALTER COLUMN allowed_file_types SET DEFAULT '["pdf","doc"]'::jsonb;
 
--- 2. attached_files: asegurar que es JSONB
-ALTER TABLE public.assignments 
-  ALTER COLUMN attached_files TYPE JSONB 
-  USING attached_files::jsonb;
+-- 2. attached_files: asegurar que es JSONB (drop default first)
+DO $$ BEGIN
+  ALTER TABLE public.assignments ALTER COLUMN attached_files DROP DEFAULT;
+  ALTER TABLE public.assignments 
+    ALTER COLUMN attached_files TYPE JSONB 
+    USING attached_files::jsonb;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 -- 3. assignment_type: asegurar TEXT (por si no se corrió el fix anterior)
 DO $$ BEGIN

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { createClient } from '@/utils/supabase/client';
 import { 
   Home, 
   BookOpen, 
@@ -17,12 +18,26 @@ import {
   User 
 } from 'lucide-react';
 
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  link?: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 interface StudentLayoutProps {
   children: React.ReactNode;
 }
 
 export default function StudentLayout({ children }: StudentLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notifRef = useRef<HTMLDivElement>(null);
   const { user, profile, signOut } = useAuthContext();
   const pathname = usePathname();
 
@@ -33,6 +48,114 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
       console.error('Error signing out:', e);
     } finally {
       window.location.href = '/login';
+    }
+  };
+
+  // Load notifications via direct fetch
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+
+    const loadNotifications = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const headers = {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${session.access_token}`,
+        };
+
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 8000);
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/notifications?user_id=eq.${user.id}&select=id,title,message,type,link,is_read,created_at&order=created_at.desc&limit=20`,
+          { headers, signal: ctrl.signal }
+        );
+        clearTimeout(t);
+        
+        if (res.ok && mounted) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setNotifications(data);
+            setUnreadCount(data.filter((n: Notification) => !n.is_read).length);
+          }
+        }
+      } catch (err) {
+        console.log('[Notifications] Error loading:', err);
+      }
+    };
+
+    loadNotifications();
+    // Refresh every 30 seconds
+    const interval = setInterval(loadNotifications, 30000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [user]);
+
+  // Close notification dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const markAsRead = async (notifId: string) => {
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      
+      await fetch(`${supabaseUrl}/rest/v1/notifications?id=eq.${notifId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ is_read: true }),
+      });
+    } catch (err) {
+      console.error('[markAsRead] Error:', err);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+    
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !user) return;
+      
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      
+      await fetch(`${supabaseUrl}/rest/v1/notifications?user_id=eq.${user.id}&is_read=eq.false`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ is_read: true }),
+      });
+    } catch (err) {
+      console.error('[markAllAsRead] Error:', err);
     }
   };
 
@@ -152,10 +275,88 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
             </button>
 
             {/* Notifications */}
-            <button className="relative p-2 text-gray-400 hover:text-white rounded-md hover:bg-gray-700">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-400 ring-2 ring-[#161b22]"></span>
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 text-gray-400 hover:text-white rounded-md hover:bg-gray-700"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-4 w-4 rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-[#161b22]">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown */}
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-[#30363d]">
+                    <h3 className="text-sm font-semibold text-white">Notificaciones</h3>
+                    {unreadCount > 0 && (
+                      <button 
+                        onClick={markAllAsRead}
+                        className="text-xs text-cyan-400 hover:text-cyan-300"
+                      >
+                        Marcar todas como leídas
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="py-8 text-center">
+                        <Bell className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">Sin notificaciones</p>
+                      </div>
+                    ) : (
+                      notifications.map((notif) => (
+                        <div 
+                          key={notif.id}
+                          className={`px-4 py-3 border-b border-[#30363d]/50 hover:bg-[#21262d] cursor-pointer transition-colors ${
+                            !notif.is_read ? 'bg-cyan-500/5' : ''
+                          }`}
+                          onClick={() => {
+                            if (!notif.is_read) markAsRead(notif.id);
+                            if (notif.link) {
+                              setShowNotifications(false);
+                              window.location.href = notif.link;
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            {!notif.is_read && (
+                              <span className="mt-1.5 h-2 w-2 rounded-full bg-cyan-400 flex-shrink-0"></span>
+                            )}
+                            <div className={`flex-1 ${notif.is_read ? 'pl-5' : ''}`}>
+                              <p className={`text-sm ${notif.is_read ? 'text-gray-400' : 'text-white font-medium'}`}>
+                                {notif.title}
+                              </p>
+                              {notif.message && (
+                                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.message}</p>
+                              )}
+                              <p className="text-xs text-gray-600 mt-1">
+                                {new Date(notif.created_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="px-4 py-2 border-t border-[#30363d]">
+                      <Link 
+                        href="/dashboard/student/tasks" 
+                        className="text-xs text-cyan-400 hover:text-cyan-300"
+                        onClick={() => setShowNotifications(false)}
+                      >
+                        Ver todas las tareas
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* User Avatar */}
             <div className="flex items-center space-x-3">

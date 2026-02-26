@@ -41,10 +41,13 @@ ALTER TABLE public.topic_resources
   ADD CONSTRAINT topic_resources_introduction_format_check 
   CHECK (introduction_format IS NULL OR introduction_format IN ('markdown', 'html', 'plain'));
 
--- UNIQUE constraint
+-- UNIQUE constraint (skip if already exists)
 DO $$ BEGIN
-  ALTER TABLE public.topic_resources ADD CONSTRAINT one_resource_per_topic UNIQUE (topic_id);
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'one_resource_per_topic'
+  ) THEN
+    ALTER TABLE public.topic_resources ADD CONSTRAINT one_resource_per_topic UNIQUE (topic_id);
+  END IF;
 END $$;
 
 -- ============================================================

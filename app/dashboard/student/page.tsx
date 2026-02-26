@@ -3,7 +3,9 @@
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useStudentEnrollments, useStudentStats, useAllStudentAssignments, useAllStudentEvaluations } from '@/hooks/useCourses'
 import { useRealtimeStudentDashboard } from '@/hooks/useRealtime'
+import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
 import { 
   BookOpen, 
   CheckCircle, 
@@ -22,8 +24,20 @@ import {
   FileText
 } from 'lucide-react'
 
+interface DashboardNotification {
+  id: string
+  title: string
+  message: string
+  is_read: boolean
+  type: string
+  link: string | null
+  created_at: string
+}
+
 export default function StudentDashboard() {
   const { profile } = useAuthContext()
+  const [sidebarNotifications, setSidebarNotifications] = useState<DashboardNotification[]>([])
+  const [notifsLoading, setNotifsLoading] = useState(true)
   
   const { data: enrollments = [], isLoading: enrollmentsLoading, error: enrollmentsError } = useStudentEnrollments(profile?.id)
   const { data: stats, isLoading: statsLoading } = useStudentStats(profile?.id)
@@ -42,6 +56,40 @@ export default function StudentDashboard() {
   // Combinar tareas pendientes de hooks y realtime
   const pendingTasks = assignments?.pending || []
   const pendingExams = evaluations?.pending || []
+
+  // Cargar notificaciones reales desde la BD
+  useEffect(() => {
+    if (!profile?.id) return
+    const loadNotifications = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) return
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/notifications?user_id=eq.${profile.id}&order=created_at.desc&limit=5`,
+          {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setSidebarNotifications(data)
+        }
+      } catch (e) {
+        console.error('Error loading sidebar notifications:', e)
+      } finally {
+        setNotifsLoading(false)
+      }
+    }
+    loadNotifications()
+    const interval = setInterval(loadNotifications, 60000)
+    return () => clearInterval(interval)
+  }, [profile?.id])
 
   if (loading) {
     return (
@@ -387,14 +435,51 @@ export default function StudentDashboard() {
               <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
                 <Bell className="w-5 h-5 text-cyan-400" />
                 Notificaciones
+                {sidebarNotifications.filter(n => !n.is_read).length > 0 && (
+                  <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 ml-auto">
+                    {sidebarNotifications.filter(n => !n.is_read).length}
+                  </span>
+                )}
               </h3>
               
-              <div className="text-center py-6">
-                <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Bell className="w-6 h-6 text-gray-600" />
+              {notifsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-14 bg-gray-800/50 rounded-lg animate-pulse" />
+                  ))}
                 </div>
-                <p className="text-gray-500 text-sm">Sin notificaciones</p>
-              </div>
+              ) : sidebarNotifications.length > 0 ? (
+                <div className="space-y-3">
+                  {sidebarNotifications.map(notif => (
+                    <Link
+                      key={notif.id}
+                      href={notif.link || '/dashboard/student/tasks'}
+                      className={`block p-3 rounded-lg border transition-colors ${
+                        notif.is_read
+                          ? 'border-gray-800/30 bg-gray-900/30 hover:bg-gray-800/40'
+                          : 'border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10'
+                      }`}
+                    >
+                      <p className={`text-sm font-medium ${notif.is_read ? 'text-gray-400' : 'text-white'}`}>
+                        {notif.title}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notif.message}</p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {new Date(notif.created_at).toLocaleDateString('es-ES', {
+                          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                        })}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Bell className="w-6 h-6 text-gray-600" />
+                  </div>
+                  <p className="text-gray-500 text-sm">Sin notificaciones</p>
+                </div>
+              )}
             </section>
 
           </aside>

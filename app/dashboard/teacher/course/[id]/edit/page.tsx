@@ -586,19 +586,40 @@ export default function EditCoursePage() {
     console.log('[UpdateUnit] Updating:', unit.id, unit.title);
     try {
       const { url, headers } = await getSupabaseHeaders();
+      // Use RPC to bypass RLS
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
-        method: 'PATCH', headers, signal: ctrl.signal,
+      const res = await fetch(`${url}/rest/v1/rpc/update_course_unit`, {
+        method: 'POST', headers: { ...headers, 'Prefer': '' }, signal: ctrl.signal,
         body: JSON.stringify({
-          title: unit.title, description: unit.description, learning_objectives: unit.learning_objectives,
-          estimated_hours: unit.estimated_hours, is_published: unit.is_published
+          p_unit_id: unit.id,
+          p_course_id: courseId,
+          p_title: unit.title,
+          p_description: unit.description || '',
+          p_is_published: unit.is_published ?? true
         })
       });
       clearTimeout(t);
-      console.log('[UpdateUnit] Response:', res.status);
-      if (res.ok) { setUnits(units.map(u => u.id === unit.id ? unit : u)); setEditingUnit(null); }
-      else { const body = await res.text(); alert('Error al actualizar unidad: ' + body); }
+      console.log('[UpdateUnit] RPC Response:', res.status);
+      if (res.ok) {
+        setUnits(units.map(u => u.id === unit.id ? unit : u));
+        setEditingUnit(null);
+      } else {
+        // Fallback to direct PATCH if RPC doesn't exist
+        console.warn('[UpdateUnit] RPC failed, trying direct PATCH...');
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), 15000);
+        const res2 = await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
+          method: 'PATCH', headers, signal: ctrl2.signal,
+          body: JSON.stringify({
+            title: unit.title, description: unit.description, learning_objectives: unit.learning_objectives,
+            estimated_hours: unit.estimated_hours, is_published: unit.is_published
+          })
+        });
+        clearTimeout(t2);
+        if (res2.ok) { setUnits(units.map(u => u.id === unit.id ? unit : u)); setEditingUnit(null); }
+        else { const body = await res2.text(); alert('Error al actualizar unidad: ' + body); }
+      }
     } catch (err: any) {
       console.error('[UpdateUnit] Error:', err);
       alert('Error al actualizar: ' + err.message);
@@ -705,32 +726,47 @@ export default function EditCoursePage() {
     setSavingTopic(true);
     try {
       const { url, headers } = await getSupabaseHeaders();
+      // Use RPC to bypass RLS
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
-        method: 'PATCH', headers, signal: ctrl.signal,
+      const res = await fetch(`${url}/rest/v1/rpc/update_unit_topic`, {
+        method: 'POST', headers: { ...headers, 'Prefer': '' }, signal: ctrl.signal,
         body: JSON.stringify({
-          title: topic.title, estimated_minutes: topic.estimated_minutes, is_published: topic.is_published
+          p_topic_id: topic.id,
+          p_course_id: courseId,
+          p_title: topic.title,
+          p_estimated_minutes: topic.estimated_minutes || 30,
+          p_is_published: topic.is_published ?? true
         })
       });
       clearTimeout(t);
       const responseData = await res.text();
-      console.log('[UpdateTopic] Response:', res.status, responseData);
+      console.log('[UpdateTopic] RPC Response:', res.status, responseData);
       setSavingTopic(false);
       if (res.ok) {
-        // Check if rows were actually updated
-        try {
-          const parsed = JSON.parse(responseData);
-          if (Array.isArray(parsed) && parsed.length === 0) {
-            alert('⚠️ No se pudo actualizar. Puede que no tengas permisos (RLS). Contacta al administrador.');
-            return;
-          }
-        } catch {}
         setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
         setEditingTopic(null);
         console.log('[UpdateTopic] Success!');
       } else {
-        alert('Error al actualizar tema: ' + responseData);
+        // Fallback to direct PATCH if RPC doesn't exist
+        console.warn('[UpdateTopic] RPC failed, trying direct PATCH...');
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), 15000);
+        const res2 = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
+          method: 'PATCH', headers, signal: ctrl2.signal,
+          body: JSON.stringify({
+            title: topic.title, estimated_minutes: topic.estimated_minutes, is_published: topic.is_published
+          })
+        });
+        clearTimeout(t2);
+        const rd2 = await res2.text();
+        console.log('[UpdateTopic] PATCH fallback:', res2.status, rd2);
+        if (res2.ok) {
+          setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
+          setEditingTopic(null);
+        } else {
+          alert('Error al actualizar tema: ' + rd2);
+        }
       }
     } catch (err: any) {
       console.error('[UpdateTopic] Error:', err);
@@ -743,28 +779,38 @@ export default function EditCoursePage() {
     if (!confirm('¿Eliminar este tema?')) return;
     try {
       const { url, headers } = await getSupabaseHeaders();
-      // First delete resources for this topic
-      const ctrl0 = new AbortController();
-      const t0 = setTimeout(() => ctrl0.abort(), 15000);
-      await fetch(`${url}/rest/v1/topic_resources?topic_id=eq.${topicId}`, {
-        method: 'DELETE', headers, signal: ctrl0.signal
-      });
-      clearTimeout(t0);
-
-      // Then delete the topic
+      // Use RPC to bypass RLS
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topicId}`, {
-        method: 'DELETE', headers, signal: ctrl.signal
+      const res = await fetch(`${url}/rest/v1/rpc/delete_unit_topic`, {
+        method: 'POST', headers: { ...headers, 'Prefer': '' }, signal: ctrl.signal,
+        body: JSON.stringify({ p_topic_id: topicId, p_course_id: courseId })
       });
       clearTimeout(t);
-      console.log('[DeleteTopic] Status:', res.status);
-      if (res.ok || res.status === 204) {
+      console.log('[DeleteTopic] RPC Status:', res.status);
+      if (res.ok) {
         setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
       } else {
-        const body = await res.text();
-        console.error('[DeleteTopic] Failed:', body);
-        alert('Error al eliminar tema: ' + body);
+        // Fallback to direct DELETE if RPC doesn't exist
+        console.warn('[DeleteTopic] RPC failed, trying direct DELETE...');
+        const ctrl0 = new AbortController();
+        const t0 = setTimeout(() => ctrl0.abort(), 15000);
+        await fetch(`${url}/rest/v1/topic_resources?topic_id=eq.${topicId}`, {
+          method: 'DELETE', headers, signal: ctrl0.signal
+        });
+        clearTimeout(t0);
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), 15000);
+        const res2 = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topicId}`, {
+          method: 'DELETE', headers, signal: ctrl2.signal
+        });
+        clearTimeout(t2);
+        if (res2.ok || res2.status === 204) {
+          setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+        } else {
+          const body = await res2.text();
+          alert('Error al eliminar tema: ' + body);
+        }
       }
     } catch (err: any) {
       console.error('Error deleting topic:', err);

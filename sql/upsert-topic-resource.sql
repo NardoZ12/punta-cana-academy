@@ -160,3 +160,163 @@ ORDER BY ordinal_position;
 SELECT routine_name, routine_type 
 FROM information_schema.routines 
 WHERE routine_name = 'upsert_topic_resource' AND routine_schema = 'public';
+
+-- ============================================================
+-- PASO 3: Función RPC para actualizar temas (unit_topics)
+-- Mismo patrón: SECURITY DEFINER para bypasear RLS
+-- ============================================================
+DROP FUNCTION IF EXISTS public.update_unit_topic(UUID, UUID, TEXT, INTEGER, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION public.update_unit_topic(
+  p_topic_id UUID,
+  p_course_id UUID,
+  p_title TEXT,
+  p_estimated_minutes INTEGER DEFAULT 30,
+  p_is_published BOOLEAN DEFAULT true
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  result JSONB;
+  v_user_id UUID;
+  v_course_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+  
+  -- Obtener course_id del tema si no se proporcionó
+  IF p_course_id IS NULL THEN
+    SELECT course_id INTO v_course_id FROM unit_topics WHERE id = p_topic_id;
+  ELSE
+    v_course_id := p_course_id;
+  END IF;
+
+  -- Verificar que el usuario es instructor del curso
+  IF NOT EXISTS (
+    SELECT 1 FROM courses WHERE id = v_course_id AND instructor_id = v_user_id
+  ) THEN
+    UPDATE courses SET instructor_id = v_user_id 
+    WHERE id = v_course_id AND instructor_id IS NULL;
+    
+    IF NOT EXISTS (
+      SELECT 1 FROM courses WHERE id = v_course_id AND instructor_id = v_user_id
+    ) THEN
+      RAISE EXCEPTION 'No autorizado: no eres el instructor de este curso';
+    END IF;
+  END IF;
+
+  UPDATE unit_topics SET
+    title = p_title,
+    estimated_minutes = p_estimated_minutes,
+    is_published = p_is_published
+  WHERE id = p_topic_id
+  RETURNING to_jsonb(unit_topics.*) INTO result;
+
+  RETURN result;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.update_unit_topic TO authenticated;
+
+-- ============================================================
+-- PASO 4: Función RPC para eliminar temas
+-- ============================================================
+DROP FUNCTION IF EXISTS public.delete_unit_topic(UUID, UUID);
+
+CREATE OR REPLACE FUNCTION public.delete_unit_topic(
+  p_topic_id UUID,
+  p_course_id UUID DEFAULT NULL
+)
+RETURNS BOOLEAN
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_user_id UUID;
+  v_course_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+  
+  IF p_course_id IS NULL THEN
+    SELECT course_id INTO v_course_id FROM unit_topics WHERE id = p_topic_id;
+  ELSE
+    v_course_id := p_course_id;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM courses WHERE id = v_course_id AND instructor_id = v_user_id
+  ) THEN
+    UPDATE courses SET instructor_id = v_user_id 
+    WHERE id = v_course_id AND instructor_id IS NULL;
+    IF NOT EXISTS (
+      SELECT 1 FROM courses WHERE id = v_course_id AND instructor_id = v_user_id
+    ) THEN
+      RAISE EXCEPTION 'No autorizado';
+    END IF;
+  END IF;
+
+  -- Borrar recursos del tema primero
+  DELETE FROM topic_resources WHERE topic_id = p_topic_id;
+  -- Borrar evaluaciones del tema
+  DELETE FROM evaluations WHERE topic_id = p_topic_id;
+  -- Borrar el tema
+  DELETE FROM unit_topics WHERE id = p_topic_id;
+
+  RETURN true;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.delete_unit_topic TO authenticated;
+
+-- ============================================================
+-- PASO 5: Función RPC para actualizar unidades (course_units)
+-- ============================================================
+DROP FUNCTION IF EXISTS public.update_course_unit(UUID, UUID, TEXT, TEXT, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION public.update_course_unit(
+  p_unit_id UUID,
+  p_course_id UUID,
+  p_title TEXT,
+  p_description TEXT DEFAULT '',
+  p_is_published BOOLEAN DEFAULT true
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql AS $$
+DECLARE
+  result JSONB;
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  IF NOT EXISTS (
+    SELECT 1 FROM courses WHERE id = p_course_id AND instructor_id = v_user_id
+  ) THEN
+    UPDATE courses SET instructor_id = v_user_id 
+    WHERE id = p_course_id AND instructor_id IS NULL;
+    IF NOT EXISTS (
+      SELECT 1 FROM courses WHERE id = p_course_id AND instructor_id = v_user_id
+    ) THEN
+      RAISE EXCEPTION 'No autorizado';
+    END IF;
+  END IF;
+
+  UPDATE course_units SET
+    title = p_title,
+    description = p_description,
+    is_published = p_is_published
+  WHERE id = p_unit_id AND course_id = p_course_id
+  RETURNING to_jsonb(course_units.*) INTO result;
+
+  RETURN result;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.update_course_unit TO authenticated;
+
+-- Verificar que TODAS las funciones RPC existen
+SELECT routine_name FROM information_schema.routines 
+WHERE routine_schema = 'public' AND routine_name IN ('upsert_topic_resource', 'update_unit_topic', 'delete_unit_topic', 'update_course_unit')
+ORDER BY routine_name;

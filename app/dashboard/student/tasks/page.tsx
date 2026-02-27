@@ -279,27 +279,49 @@ export default function StudentTasksPage() {
         }
       }
 
-      // Crear submission via direct fetch
-      const submissionPayload = {
-        assignment_id: selectedAssignment.id,
-        student_id: userId,
-        content: submissionContent,
-        submission_text: submissionContent,
-        attachment_url: attachmentUrl,
-        file_url: attachmentUrl,
-        submitted_at: new Date().toISOString(),
-        status: 'submitted'
-      };
+      // Usar RPC submit_assignment (SECURITY DEFINER, evita problemas de RLS)
+      const submittedFiles = attachmentUrl 
+        ? [{ url: attachmentUrl, name: submissionFile?.name || 'archivo', uploaded_at: new Date().toISOString() }]
+        : [];
 
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 10000);
-      const res = await fetch(`${supabaseUrl}/rest/v1/assignment_submissions`, {
+      
+      // Intentar via RPC primero
+      let res = await fetch(`${supabaseUrl}/rest/v1/rpc/submit_assignment`, {
         method: 'POST',
-        headers: { ...headers, 'Prefer': 'return=representation' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         signal: ctrl.signal,
-        body: JSON.stringify(submissionPayload)
+        body: JSON.stringify({
+          p_assignment_id: selectedAssignment.id,
+          p_submission_text: submissionContent || '',
+          p_submitted_files: submittedFiles
+        })
       });
       clearTimeout(t);
+
+      if (!res.ok) {
+        // Fallback: POST directo a la tabla
+        console.warn('[submitAssignment] RPC failed, trying direct POST');
+        const submissionPayload: Record<string, unknown> = {
+          assignment_id: selectedAssignment.id,
+          student_id: userId,
+          submission_text: submissionContent,
+          submitted_files: submittedFiles,
+          submitted_at: new Date().toISOString(),
+          status: 'submitted'
+        };
+        
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), 10000);
+        res = await fetch(`${supabaseUrl}/rest/v1/assignment_submissions`, {
+          method: 'POST',
+          headers: { ...headers, 'Prefer': 'return=representation' },
+          signal: ctrl2.signal,
+          body: JSON.stringify(submissionPayload)
+        });
+        clearTimeout(t2);
+      }
 
       if (res.ok) {
         setSubmissionModal(false);

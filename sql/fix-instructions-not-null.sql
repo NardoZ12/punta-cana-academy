@@ -101,7 +101,7 @@ BEGIN
                     CASE WHEN p_due_date IS NOT NULL 
                         THEN '. Fecha límite: ' || to_char(p_due_date, 'DD/MM/YYYY HH24:MI')
                         ELSE '' END,
-                    'info', '/dashboard/student/tasks',
+                    'task_assigned', '/dashboard/student/tasks',
                     v_assignment_id, 'assignment', false, NOW()
                 );
             END LOOP;

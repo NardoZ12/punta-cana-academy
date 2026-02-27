@@ -18,7 +18,11 @@ import {
   AlertCircle,
   X,
   Target,
-  Award
+  Award,
+  ClipboardCheck,
+  MessageSquare,
+  Eye,
+  Send
 } from 'lucide-react';
 
 interface Course {
@@ -59,6 +63,33 @@ interface Question {
   optionD: string;
   correct: string;
   points: number;
+}
+
+interface AssignmentForReview {
+  id: string;
+  title: string;
+  course_id: string;
+  course_title: string;
+  max_points: number;
+  assignment_type?: string;
+  due_date?: string;
+}
+
+interface SubmissionForReview {
+  id: string;
+  assignment_id: string;
+  student_id: string;
+  student_name?: string;
+  student_email?: string;
+  submission_text?: string;
+  submitted_files?: { url: string; name: string }[];
+  submitted_at: string;
+  status: string;
+  score?: number;
+  instructor_feedback?: string;
+  assignment_title?: string;
+  assignment_max_points?: number;
+  course_title?: string;
 }
 
 // Tipos para tareas avanzadas
@@ -154,6 +185,16 @@ export default function TeacherDashboard() {
     attached_links: [] as string[],
     newLink: ''
   });
+
+  // Estado para entregas y calificaciones
+  const [submissions, setSubmissions] = useState<SubmissionForReview[]>([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState<SubmissionForReview | null>(null);
+  const [gradeScore, setGradeScore] = useState<number>(0);
+  const [gradeFeedback, setGradeFeedback] = useState('');
+  const [gradingSubmitting, setGradingSubmitting] = useState(false);
+  const [showSubmissionsPanel, setShowSubmissionsPanel] = useState(false);
   const [examData, setExamData] = useState({ 
     title: '', 
     date: '', 
@@ -455,6 +496,157 @@ export default function TeacherDashboard() {
     setSelectedStudentIds(newSet);
     setSelectAllStudents(newSet.size === courseStudents.length);
   };
+
+  // Cargar entregas de los estudiantes para el curso seleccionado
+  const loadSubmissions = async () => {
+    if (!selectedCourseId) return;
+    setLoadingSubmissions(true);
+    try {
+      const { supabaseUrl, headers } = getAuthHeaders();
+
+      // 1. Obtener assignments del curso
+      const ctrl1 = new AbortController();
+      const t1 = setTimeout(() => ctrl1.abort(), 10000);
+      const assignRes = await fetch(
+        `${supabaseUrl}/rest/v1/assignments?course_id=eq.${selectedCourseId}&select=id,title,max_points,assignment_type,due_date,course_id`,
+        { headers, signal: ctrl1.signal }
+      );
+      clearTimeout(t1);
+      const assignmentsData = await assignRes.json();
+      if (!Array.isArray(assignmentsData) || assignmentsData.length === 0) {
+        setSubmissions([]);
+        setLoadingSubmissions(false);
+        return;
+      }
+
+      const assignmentIds = assignmentsData.map((a: any) => a.id);
+      const assignmentMap: Record<string, any> = {};
+      assignmentsData.forEach((a: any) => { assignmentMap[a.id] = a; });
+
+      // 2. Obtener todas las submissions de esas tareas
+      const idsParam = assignmentIds.map((id: string) => `"${id}"`).join(',');
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 10000);
+      const subsRes = await fetch(
+        `${supabaseUrl}/rest/v1/assignment_submissions?assignment_id=in.(${idsParam})&select=id,assignment_id,student_id,submission_text,submitted_files,submitted_at,status,score,instructor_feedback&order=submitted_at.desc`,
+        { headers, signal: ctrl2.signal }
+      );
+      clearTimeout(t2);
+      let subsData = await subsRes.json();
+      if (!Array.isArray(subsData)) subsData = [];
+
+      // 3. Obtener perfiles de estudiantes
+      const studentIds = [...new Set(subsData.map((s: any) => s.student_id))];
+      let profilesMap: Record<string, any> = {};
+      if (studentIds.length > 0) {
+        const sIdsParam = studentIds.map((id: string) => `"${id}"`).join(',');
+        const ctrl3 = new AbortController();
+        const t3 = setTimeout(() => ctrl3.abort(), 10000);
+        const profRes = await fetch(
+          `${supabaseUrl}/rest/v1/profiles?id=in.(${sIdsParam})&select=id,full_name,email`,
+          { headers, signal: ctrl3.signal }
+        );
+        clearTimeout(t3);
+        const profiles = await profRes.json();
+        if (Array.isArray(profiles)) {
+          profiles.forEach((p: any) => { profilesMap[p.id] = p; });
+        }
+      }
+
+      // 4. Merge data
+      const merged: SubmissionForReview[] = subsData.map((s: any) => {
+        const assignment = assignmentMap[s.assignment_id];
+        const profile = profilesMap[s.student_id];
+        return {
+          ...s,
+          student_name: profile?.full_name || 'Estudiante',
+          student_email: profile?.email || '',
+          assignment_title: assignment?.title || 'Tarea',
+          assignment_max_points: assignment?.max_points || 100,
+          course_title: currentCourse?.title || 'Curso',
+          submitted_files: Array.isArray(s.submitted_files) ? s.submitted_files : 
+            (typeof s.submitted_files === 'string' ? JSON.parse(s.submitted_files) : [])
+        };
+      });
+
+      setSubmissions(merged);
+    } catch (err) {
+      console.error('[loadSubmissions] Error:', err);
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  };
+
+  // Calificar una entrega
+  const handleGradeSubmission = async () => {
+    if (!selectedSubmission) return;
+    setGradingSubmitting(true);
+    try {
+      const { supabaseUrl, headers } = getAuthHeaders();
+
+      // Intentar via RPC primero
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 10000);
+      let res = await fetch(`${supabaseUrl}/rest/v1/rpc/grade_assignment`, {
+        method: 'POST',
+        headers,
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          p_submission_id: selectedSubmission.id,
+          p_score: gradeScore,
+          p_feedback: gradeFeedback
+        })
+      });
+      clearTimeout(t);
+
+      // Fallback: PATCH directo
+      if (res.status === 404) {
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), 10000);
+        res = await fetch(
+          `${supabaseUrl}/rest/v1/assignment_submissions?id=eq.${selectedSubmission.id}`,
+          {
+            method: 'PATCH',
+            headers: { ...headers, 'Prefer': 'return=representation' },
+            signal: ctrl2.signal,
+            body: JSON.stringify({
+              score: gradeScore,
+              instructor_feedback: gradeFeedback,
+              status: 'graded',
+              graded_at: new Date().toISOString(),
+              graded_by: user?.id
+            })
+          }
+        );
+        clearTimeout(t2);
+      }
+
+      if (res.ok) {
+        alert('✓ Calificación guardada correctamente');
+        setIsGradeModalOpen(false);
+        setSelectedSubmission(null);
+        setGradeScore(0);
+        setGradeFeedback('');
+        await loadSubmissions();
+      } else {
+        const errBody = await res.text();
+        console.error('[handleGradeSubmission] Error:', errBody);
+        alert('Error al calificar: ' + errBody);
+      }
+    } catch (err: any) {
+      console.error('[handleGradeSubmission] Exception:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      setGradingSubmitting(false);
+    }
+  };
+
+  // Cargar entregas cuando se selecciona un curso
+  useEffect(() => {
+    if (selectedCourseId && showSubmissionsPanel) {
+      loadSubmissions();
+    }
+  }, [selectedCourseId, showSubmissionsPanel]);
 
   const handleCreateTask = async () => {
     if (!taskCourseId || !taskData.title) return alert('Seleccione un curso y complete el título');
@@ -865,9 +1057,140 @@ export default function TeacherDashboard() {
                 <Clock className="w-4 h-4" />
                 Crear Examen
               </button>
+              <button 
+                onClick={() => setShowSubmissionsPanel(!showSubmissionsPanel)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+                  showSubmissionsPanel 
+                    ? 'bg-green-500/20 border border-green-500/50 text-green-400' 
+                    : 'bg-[#0a0f1a] border border-gray-800 hover:border-green-500/50 text-white'
+                }`}
+              >
+                <ClipboardCheck className="w-4 h-4 text-green-400" />
+                Ver Entregas
+              </button>
             </div>
           )}
         </section>
+
+        {/* PANEL DE ENTREGAS */}
+        {showSubmissionsPanel && selectedCourseId && (
+          <section className="mb-8 bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <ClipboardCheck className="w-5 h-5 text-green-400" />
+                Entregas de Estudiantes - {currentCourse?.title || 'Curso'}
+              </h2>
+              <div className="flex items-center gap-3">
+                <span className="text-xs bg-yellow-500/10 text-yellow-400 px-3 py-1 rounded-full font-medium">
+                  {submissions.filter(s => s.status === 'submitted').length} pendientes
+                </span>
+                <span className="text-xs bg-green-500/10 text-green-400 px-3 py-1 rounded-full font-medium">
+                  {submissions.filter(s => s.status === 'graded').length} calificadas
+                </span>
+                <button 
+                  onClick={loadSubmissions}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 px-2 py-1"
+                >
+                  Actualizar
+                </button>
+              </div>
+            </div>
+
+            {loadingSubmissions ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500 mx-auto mb-3"></div>
+                <p className="text-gray-500 text-sm">Cargando entregas...</p>
+              </div>
+            ) : submissions.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ClipboardCheck className="w-8 h-8 text-gray-600" />
+                </div>
+                <h3 className="text-gray-300 font-medium mb-2">Sin entregas aún</h3>
+                <p className="text-gray-500 text-sm">Las entregas aparecerán aquí cuando los estudiantes envíen sus tareas</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-800">
+                      <th className="pb-3 font-medium">Estudiante</th>
+                      <th className="pb-3 font-medium">Tarea</th>
+                      <th className="pb-3 font-medium text-center">Fecha entrega</th>
+                      <th className="pb-3 font-medium text-center">Estado</th>
+                      <th className="pb-3 font-medium text-center">Calificación</th>
+                      <th className="pb-3 font-medium text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {submissions.map((sub) => (
+                      <tr key={sub.id} className="group hover:bg-gray-800/20 transition-colors">
+                        <td className="py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                              {sub.student_name?.charAt(0) || 'E'}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-white text-sm truncate">{sub.student_name}</p>
+                              <p className="text-xs text-gray-500 truncate">{sub.student_email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4">
+                          <p className="text-sm text-white truncate max-w-[200px]">{sub.assignment_title}</p>
+                        </td>
+                        <td className="py-4 text-center">
+                          <span className="text-xs text-gray-400">
+                            {new Date(sub.submitted_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </td>
+                        <td className="py-4 text-center">
+                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                            sub.status === 'graded' 
+                              ? 'bg-green-500/20 text-green-400' 
+                              : sub.status === 'late'
+                              ? 'bg-red-500/20 text-red-400'
+                              : 'bg-yellow-500/20 text-yellow-400'
+                          }`}>
+                            {sub.status === 'graded' ? 'Calificada' : sub.status === 'late' ? 'Tarde' : 'Pendiente'}
+                          </span>
+                        </td>
+                        <td className="py-4 text-center">
+                          {sub.score != null ? (
+                            <span className={`text-sm font-semibold ${
+                              sub.score >= (sub.assignment_max_points || 100) * 0.7 ? 'text-green-400' : 'text-yellow-400'
+                            }`}>
+                              {sub.score}/{sub.assignment_max_points || 100}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-500">—</span>
+                          )}
+                        </td>
+                        <td className="py-4 text-right">
+                          <button
+                            onClick={() => {
+                              setSelectedSubmission(sub);
+                              setGradeScore(sub.score || 0);
+                              setGradeFeedback(sub.instructor_feedback || '');
+                              setIsGradeModalOpen(true);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                              sub.status === 'graded'
+                                ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                                : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
+                            }`}
+                          >
+                            {sub.status === 'graded' ? 'Editar' : 'Calificar'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* MAIN GRID */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1595,6 +1918,171 @@ export default function TeacherDashboard() {
                 className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
                 {submitting ? 'Guardando...' : 'Crear Examen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CALIFICACIÓN */}
+      {isGradeModalOpen && selectedSubmission && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800 flex-shrink-0">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Award className="w-5 h-5 text-yellow-400" />
+                Calificar Entrega
+              </h2>
+              <button onClick={() => { setIsGradeModalOpen(false); setSelectedSubmission(null); }} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Info del estudiante y tarea */}
+              <div className="bg-[#030712] border border-gray-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-medium">
+                    {selectedSubmission.student_name?.charAt(0) || 'E'}
+                  </div>
+                  <div>
+                    <p className="font-medium text-white">{selectedSubmission.student_name}</p>
+                    <p className="text-xs text-gray-500">{selectedSubmission.student_email}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-500">Tarea:</span>
+                    <p className="text-white font-medium">{selectedSubmission.assignment_title}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Entregado:</span>
+                    <p className="text-white">{new Date(selectedSubmission.submitted_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contenido de la entrega */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                  <Eye className="w-4 h-4" />
+                  Contenido de la entrega
+                </h3>
+                {selectedSubmission.submission_text ? (
+                  <div className="bg-[#030712] border border-gray-800 rounded-xl p-4 text-sm text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {selectedSubmission.submission_text}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm italic">Sin texto de entrega</p>
+                )}
+              </div>
+
+              {/* Archivos adjuntos */}
+              {selectedSubmission.submitted_files && selectedSubmission.submitted_files.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-300 mb-2">Archivos adjuntos</h3>
+                  <div className="space-y-2">
+                    {selectedSubmission.submitted_files.map((file: any, idx: number) => (
+                      <a
+                        key={idx}
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 bg-[#030712] border border-gray-800 rounded-lg p-3 hover:border-cyan-500/50 transition-colors"
+                      >
+                        <FileText className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white truncate">{file.name || 'Archivo adjunto'}</p>
+                        </div>
+                        <span className="text-xs text-cyan-400">Abrir →</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Calificación */}
+              <div className="border-t border-gray-800 pt-5">
+                <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-yellow-400" />
+                  Calificación
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1.5">
+                      Puntuación (máx: {selectedSubmission.assignment_max_points || 100})
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={selectedSubmission.assignment_max_points || 100}
+                      value={gradeScore}
+                      onChange={(e) => setGradeScore(Math.min(parseInt(e.target.value) || 0, selectedSubmission.assignment_max_points || 100))}
+                      className="w-full bg-[#030712] border border-gray-800 rounded-lg p-2.5 text-white text-lg font-semibold focus:border-cyan-500 focus:outline-none"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      {[100, 90, 80, 70, 60, 50].map(pct => {
+                        const pts = Math.round((selectedSubmission.assignment_max_points || 100) * pct / 100);
+                        return (
+                          <button
+                            key={pct}
+                            onClick={() => setGradeScore(pts)}
+                            className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded hover:bg-gray-700 hover:text-white transition-colors"
+                          >
+                            {pct}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1.5">Porcentaje</label>
+                    <div className="bg-[#030712] border border-gray-800 rounded-lg p-2.5 flex items-center justify-center">
+                      <span className={`text-3xl font-bold ${
+                        gradeScore >= (selectedSubmission.assignment_max_points || 100) * 0.7 ? 'text-green-400' 
+                        : gradeScore >= (selectedSubmission.assignment_max_points || 100) * 0.5 ? 'text-yellow-400'
+                        : 'text-red-400'
+                      }`}>
+                        {Math.round((gradeScore / (selectedSubmission.assignment_max_points || 100)) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Retroalimentación para el estudiante
+                  </label>
+                  <textarea
+                    value={gradeFeedback}
+                    onChange={(e) => setGradeFeedback(e.target.value)}
+                    rows={4}
+                    placeholder="Escribe comentarios sobre la entrega del estudiante..."
+                    className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white text-sm resize-none focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 p-5 border-t border-gray-800 flex-shrink-0">
+              <button
+                onClick={() => { setIsGradeModalOpen(false); setSelectedSubmission(null); }}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleGradeSubmission}
+                disabled={gradingSubmitting}
+                className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {gradingSubmitting ? (
+                  <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-black"></div> Guardando...</>
+                ) : (
+                  <><Send className="w-4 h-4" /> Guardar Calificación</>
+                )}
               </button>
             </div>
           </div>

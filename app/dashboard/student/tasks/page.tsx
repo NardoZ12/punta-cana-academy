@@ -38,9 +38,11 @@ interface Assignment {
   submission?: {
     id: string;
     submitted_at: string;
-    content: string;
-    attachment_url?: string;
+    submission_text?: string;
+    submitted_files?: { url: string; name: string }[];
+    score?: number;
     grade?: number;
+    instructor_feedback?: string;
     feedback?: string;
     status?: string;
   } | null;
@@ -171,7 +173,7 @@ export default function StudentTasksPage() {
       const ctrl4 = new AbortController();
       const t4 = setTimeout(() => ctrl4.abort(), 10000);
       const subsRes = await fetch(
-        `${supabaseUrl}/rest/v1/assignment_submissions?student_id=eq.${userId}&select=id,assignment_id,submitted_at,content,attachment_url,grade,feedback,status`,
+        `${supabaseUrl}/rest/v1/assignment_submissions?student_id=eq.${userId}&select=id,assignment_id,submitted_at,submission_text,submitted_files,score,instructor_feedback,status`,
         { headers, signal: ctrl4.signal }
       );
       clearTimeout(t4);
@@ -560,17 +562,22 @@ export default function StudentTasksPage() {
                           {new Date(submission.submitted_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      {submission.grade != null && (
+                      {submission.status === 'graded' && (submission.score != null || submission.grade != null) && (
                         <div className="text-sm text-gray-300 mb-1">
                           <span className="font-medium">Calificación:</span>{' '}
-                          <span className={Number(submission.grade) >= (assignment.max_points * 0.7) ? 'text-green-400' : 'text-yellow-400'}>
-                            {submission.grade}/{assignment.max_points}
+                          <span className={Number(submission.score ?? submission.grade ?? 0) >= (assignment.max_points * 0.7) ? 'text-green-400' : 'text-yellow-400'}>
+                            {submission.score ?? submission.grade}/{assignment.max_points}
                           </span>
                         </div>
                       )}
-                      {submission.feedback && (
+                      {submission.status === 'submitted' && (
+                        <div className="text-sm text-yellow-400 mb-1">
+                          <span className="font-medium">Estado:</span> Pendiente de calificación
+                        </div>
+                      )}
+                      {(submission.instructor_feedback || submission.feedback) && (
                         <div className="text-sm text-gray-300">
-                          <span className="font-medium">Comentarios:</span> {submission.feedback}
+                          <span className="font-medium">Comentarios del profesor:</span> {submission.instructor_feedback || submission.feedback}
                         </div>
                       )}
                     </div>

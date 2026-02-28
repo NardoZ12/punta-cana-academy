@@ -1,82 +1,154 @@
-// src/app/dashboard/student/quiz/[id]/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/atoms/Button';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-
-// DATOS SIMULADOS DEL EXAMEN (A1 - Module 2)
-const quizData = {
-  title: "Quiz: Numbers, Days & Dates",
-  questions: [
-    {
-      id: 1,
-      question: "Which day comes after Tuesday?",
-      options: ["Monday", "Wednesday", "Thursday", "Friday"],
-      correctAnswer: 1 // Index of 'Wednesday'
-    },
-    {
-      id: 2,
-      question: "How do you write the date 'March 15th'?",
-      options: ["15/03", "03/15", "March of 15", "The 15 March"],
-      correctAnswer: 0 // Index of '15/03' (European/Latam format) or 1 depending on preference. Let's assume standard international.
-    },
-    {
-      id: 3,
-      question: "Select the correct number: 'Thirty-three'",
-      options: ["13", "303", "33", "30"],
-      correctAnswer: 2
-    },
-    {
-      id: 4,
-      question: "Complete the sentence: My birthday is ___ July.",
-      options: ["on", "at", "in", "to"],
-      correctAnswer: 2 // 'in' July
-    },
-    {
-      id: 5,
-      question: "What is the 12th month of the year?",
-      options: ["November", "January", "December", "October"],
-      correctAnswer: 2
-    }
-  ]
-};
+import { useRouter, useParams } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 export default function QuizPage() {
+  const params = useParams();
   const router = useRouter();
+  const { user } = useAuthContext();
+  const supabase = createClient();
+
+  // Estados
+  const [exam, setExam] = useState<any>(null);
+  const [questions, setQuestions] = useState<any[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [selectedOptionText, setSelectedOptionText] = useState<string | null>(null);
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  // Manejar selección
-  const handleOptionClick = (index: number) => {
-    setSelectedOption(index);
+  // Cargar datos del examen desde Supabase
+  useEffect(() => {
+    const fetchExamData = async () => {
+      if (!params.id) return;
+      try {
+        // 1. Obtener detalles del examen
+        const { data: examData, error: examError } = await supabase
+          .from('exams')
+          .select('*')
+          .eq('id', params.id)
+          .single();
+          
+        if (examError) throw examError;
+        setExam(examData);
+
+        // 2. Obtener preguntas
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('exam_questions')
+          .select('*')
+          .eq('exam_id', params.id)
+          .order('created_at', { ascending: true });
+
+        if (questionsError) throw questionsError;
+
+        // 3. PARSEO SEGURO: Convertir string JSON a Array real (Evita el pantallazo blanco)
+        const safeQuestions = questionsData?.map(q => {
+          let parsedOptions = [];
+          if (typeof q.options === 'string') {
+            try {
+              parsedOptions = JSON.parse(q.options);
+            } catch (e) {
+              console.error("Error parseando opciones:", q.options);
+            }
+          } else if (Array.isArray(q.options)) {
+            parsedOptions = q.options;
+          }
+          return { ...q, options: parsedOptions };
+        }) || [];
+
+        setQuestions(safeQuestions);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchExamData();
+  }, [params.id, supabase]);
+
+  // Manejar click en una opción
+  const handleOptionClick = (optionText: string) => {
+    setSelectedOptionText(optionText);
   };
 
-  // Ir a la siguiente pregunta
-  const handleNext = () => {
-    // Verificar si la respuesta es correcta y sumar puntos
-    if (selectedOption === quizData.questions[currentQuestion].correctAnswer) {
-      setScore(score + 1);
+  // Botón Siguiente
+  const handleNext = async () => {
+    if (selectedOptionText === null) return;
+    
+    const currentQ = questions[currentQuestion];
+    const points = currentQ.points || 1;
+    let newScore = score;
+
+    // Verificar si la respuesta es correcta usando el texto exacto
+    if (selectedOptionText === currentQ.correct_answer) {
+      newScore = score + points;
+      setScore(newScore);
     }
 
     const nextQuestion = currentQuestion + 1;
-    if (nextQuestion < quizData.questions.length) {
+    
+    if (nextQuestion < questions.length) {
       setCurrentQuestion(nextQuestion);
-      setSelectedOption(null); // Resetear selección
+      setSelectedOptionText(null);
     } else {
+      // TERMINÓ EL EXAMEN - Calcular y guardar en BD
+      setSubmitting(true);
+      const totalPoints = questions.reduce((acc, q) => acc + (q.points || 1), 0);
+      const finalPercentage = Math.round((newScore / totalPoints) * 100);
+      const isPassed = finalPercentage >= (exam?.passing_score || 70);
+
+      // Guardar intento en la tabla exam_submissions
+      if (user) {
+        await supabase.from('exam_submissions').insert({
+          exam_id: exam.id,
+          student_id: user.id,
+          score: newScore,
+          passed: isPassed
+        });
+      }
+      
+      setSubmitting(false);
       setShowResult(true);
     }
   };
 
-  // Calcular porcentaje final
-  const percentage = Math.round((score / quizData.questions.length) * 100);
-  const isPassed = percentage >= 70;
+  // --- ESTADOS DE CARGA Y ERROR ---
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-pca-black flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pca-blue"></div>
+      </div>
+    );
+  }
 
-  // --- VISTA DE RESULTADOS ---
+  if (error || questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-pca-black flex items-center justify-center p-4">
+        <div className="bg-gray-900 p-8 rounded-2xl text-center border border-gray-800">
+          <h2 className="text-2xl mb-4 text-white">No se pudo cargar el examen</h2>
+          <p className="text-gray-400 mb-6">{error || "Aún no se han agregado preguntas."}</p>
+          <Link href="/dashboard/student">
+            <Button variant="primary">Volver al Dashboard</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // --- VISTA DE RESULTADOS (Se muestra al finalizar) ---
+  const totalPoints = questions.reduce((acc, q) => acc + (q.points || 1), 0);
+  const percentage = Math.round((score / totalPoints) * 100);
+  const isPassed = percentage >= (exam?.passing_score || 70);
+
   if (showResult) {
     return (
       <div className="min-h-screen bg-pca-black flex items-center justify-center p-4">
@@ -88,12 +160,12 @@ export default function QuizPage() {
           <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl border-4 ${isPassed ? 'border-green-500 text-green-500 bg-green-500/10' : 'border-red-500 text-red-500 bg-red-500/10'}`}>
             {percentage}%
           </div>
-          
+
           <h2 className="text-3xl font-bold text-white mb-2">
             {isPassed ? '¡Felicidades! 🎉' : 'Sigue practicando 📚'}
           </h2>
           <p className="text-gray-400 mb-8">
-            Has respondido correctamente {score} de {quizData.questions.length} preguntas.
+            Has obtenido {score} puntos de {totalPoints} posibles.
           </p>
 
           <div className="space-y-3">
@@ -118,41 +190,39 @@ export default function QuizPage() {
   // --- VISTA DEL EXAMEN ---
   return (
     <div className="min-h-screen bg-pca-black flex flex-col items-center justify-center p-4">
-      
-      {/* Barra de Progreso Superior */}
       <div className="w-full max-w-2xl mb-8">
         <div className="flex justify-between text-gray-400 text-sm mb-2">
-          <span>Pregunta {currentQuestion + 1} de {quizData.questions.length}</span>
-          <span>{Math.round(((currentQuestion + 1) / quizData.questions.length) * 100)}% Completado</span>
+          <span>Pregunta {currentQuestion + 1} de {questions.length}</span>
+          <span>{Math.round(((currentQuestion + 1) / questions.length) * 100)}% Completado</span>
         </div>
         <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
           <motion.div 
             className="h-full bg-pca-blue"
             initial={{ width: 0 }}
-            animate={{ width: `${((currentQuestion + 1) / quizData.questions.length) * 100}%` }}
+            animate={{ width: `${((currentQuestion + 1) / questions.length) * 100}%` }}
           />
         </div>
       </div>
 
-      {/* Tarjeta de Pregunta */}
       <div className="w-full max-w-2xl bg-gray-900 p-8 rounded-2xl border border-gray-800 shadow-xl">
         <h2 className="text-2xl font-bold text-white mb-8">
-          {quizData.questions[currentQuestion].question}
+          {questions[currentQuestion].question_text}
         </h2>
 
         <div className="space-y-4 mb-8">
-          {quizData.questions[currentQuestion].options.map((option, index) => (
+          {questions[currentQuestion].options.map((option: string, index: number) => (
             <button
+              type="button"
               key={index}
-              onClick={() => handleOptionClick(index)}
+              onClick={() => handleOptionClick(option)}
               className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex justify-between items-center ${
-                selectedOption === index 
+                selectedOptionText === option 
                   ? 'bg-pca-blue/20 border-pca-blue text-white ring-1 ring-pca-blue' 
                   : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-750 hover:border-gray-500'
               }`}
             >
               <span className="font-medium">{option}</span>
-              {selectedOption === index && (
+              {selectedOptionText === option && (
                 <div className="w-3 h-3 bg-pca-blue rounded-full shadow-[0_0_10px_rgba(0,86,179,0.8)]"></div>
               )}
             </button>
@@ -163,14 +233,12 @@ export default function QuizPage() {
           <Button 
             variant="primary" 
             onClick={handleNext}
-            // Deshabilitar si no ha seleccionado nada (opcional, aquí lo dejo manual)
-             // disabled={selectedOption === null}
+            disabled={selectedOptionText === null || submitting}
           >
-            {currentQuestion === quizData.questions.length - 1 ? 'Finalizar Examen' : 'Siguiente Pregunta'}
+            {submitting ? 'Guardando...' : currentQuestion === questions.length - 1 ? 'Finalizar Examen' : 'Siguiente Pregunta'}
           </Button>
         </div>
       </div>
-
     </div>
   );
 }

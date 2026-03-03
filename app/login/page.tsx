@@ -21,14 +21,11 @@ export default function LoginPage() {
       const { error: authError } = await signIn(email, password)
       
       if (authError) {
-        // Mostrar mensaje si la contraseña es incorrecta
         setError(authError.message || authError)
         setLoading(false)
       } else {
-        // 🔥 FIX: En lugar de router.push(), usamos window.location.href.
-        // Esto fuerza al navegador a recargar la página completamente, 
-        // asegurando que las cookies de sesión se pasen correctamente 
-        // a tu middleware y a tu DashboardTrafficCop.
+        // 🔥 FIX: Forzar recarga completa para que las cookies de sesión
+        // se pasen correctamente al middleware y al DashboardTrafficCop.
         window.location.href = '/dashboard'
       }
     } catch (err) {

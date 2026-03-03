@@ -51,7 +51,7 @@ export default function QuizPage() {
 
         // 3. PARSEO SEGURO: Convertir string JSON a Array real (Evita el pantallazo blanco)
         const safeQuestions = questionsData?.map(q => {
-          let parsedOptions = [];
+          let parsedOptions: string[] = [];
           if (typeof q.options === 'string') {
             try {
               parsedOptions = JSON.parse(q.options);

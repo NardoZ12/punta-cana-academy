@@ -30,7 +30,7 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // 1. Obtener el usuario (Solo lee cookies, no hace consultas SQL)
+  // 1. Obtener el usuario (solo lee cookies, no hace consultas SQL)
   const { data: { user } } = await supabase.auth.getUser()
   const currentPath = request.nextUrl.pathname
 
@@ -40,8 +40,8 @@ export async function middleware(request: NextRequest) {
       const redirectUrl = new URL('/login', request.url)
       return NextResponse.redirect(redirectUrl)
     }
-    // Borramos toda la lógica de buscar en "profiles" desde aquí.
-    // Esa responsabilidad se la dejamos a las páginas Server Components
+    // La responsabilidad de verificar roles se delega a las páginas
+    // Server Components (app/dashboard/page.tsx y los layouts de teacher/student).
   }
 
   // 3. Redirigir usuarios autenticados que van a login/registro

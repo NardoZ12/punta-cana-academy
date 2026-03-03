@@ -1,421 +1,612 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/atoms/Button';
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { 
+  Play, 
+  CheckCircle, 
+  ChevronLeft, 
+  ChevronRight, 
+  FileText, 
+  Download, 
+  Upload,
+  Target,
+  Clock,
+  Book
+} from 'lucide-react';
 
-interface Lesson {
-  id: string;
-  title: string;
-  description: string;
-  video_url?: string;
-  duration?: number;
-  created_at: string;
-  sort_order?: number;
+function getEmbedUrl(url: string | null) {
+  if (!url) return null;
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    const videoId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
+    return `https://www.youtube.com/embed/${videoId}?autoplay=0&rel=0&enablejsapi=1`;
+  }
+  return url;
 }
 
 export default function LessonPage() {
-  const { courseId, lessonId } = useParams();
+  const params = useParams();
   const router = useRouter();
+  const lessonId = params?.lessonId as string;
+  const courseId = params?.courseId as string;
+  
+  const [lesson, setLesson] = useState<any>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [watchTime, setWatchTime] = useState(0);
+  const [hasScrolledToEnd, setHasScrolledToEnd] = useState(false);
+  const [videoCompleted, setVideoCompleted] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [nextLesson, setNextLesson] = useState<any>(null);
+  const [isLastLessonOfModule, setIsLastLessonOfModule] = useState(false);
+  const [nextModule, setNextModule] = useState<any>(null);
+  const [isCourseCompleted, setIsCourseCompleted] = useState(false);
+  const [activeTab, setActiveTab] = useState<'class' | 'resources' | 'tasks' | 'evaluation'>('class');
+  
   const supabase = createClient();
 
-  const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [dbStructure, setDbStructure] = useState<{
-    lessonsTable: 'lessons' | 'course_lessons';
-    progressTable: 'user_lesson_progress' | 'lesson_progress';
-    progressIdField: 'user_id' | 'student_id';
-  }>({
-    lessonsTable: 'course_lessons',
-    progressTable: 'lesson_progress', 
-    progressIdField: 'student_id'
-  });
-
   useEffect(() => {
-    if (lessonId) {
-      detectDatabaseStructure();
-    }
-  }, [lessonId]);
-
-  const detectDatabaseStructure = async () => {
-    try {
+    async function loadLessonData() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
-      console.log('🔍 Detectando estructura de base de datos...');
-      
-      // Intentar con course_lessons primero
-      const { data: courseLessonsData, error: courseLessonsError } = await supabase
+      const { data: lessonData, error } = await supabase
         .from('course_lessons')
-        .select('*')
+        .select('*, course_modules!inner(id, title, sort_order, course_id)')
         .eq('id', lessonId)
-        .limit(1);
+        .single();
 
-      if (courseLessonsData && courseLessonsData.length > 0) {
-        console.log('✅ Usando course_lessons');
-        setDbStructure(prev => ({ ...prev, lessonsTable: 'course_lessons' }));
-        
-        // Verificar tabla de progreso
-        const { data: lessonProgressData, error: lessonProgressError } = await supabase
-          .from('lesson_progress')
-          .select('*')
-          .eq('student_id', user.id)
-          .eq('lesson_id', lessonId)
-          .limit(1);
-
-        if (!lessonProgressError) {
-          console.log('✅ Usando lesson_progress con student_id');
-          setDbStructure(prev => ({ 
-            ...prev, 
-            progressTable: 'lesson_progress',
-            progressIdField: 'student_id'
-          }));
-        } else {
-          // Intentar con user_lesson_progress
-          const { data: userProgressData, error: userProgressError } = await supabase
-            .from('user_lesson_progress')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('lesson_id', lessonId)
-            .limit(1);
-          
-          if (!userProgressError) {
-            console.log('✅ Usando user_lesson_progress con user_id');
-            setDbStructure(prev => ({ 
-              ...prev, 
-              progressTable: 'user_lesson_progress',
-              progressIdField: 'user_id'
-            }));
-          }
-        }
-        
-        loadLessonWithStructure();
+      if (error || !lessonData) {
+        setLesson(null);
+        setLoading(false);
         return;
       }
 
-      // Si course_lessons falla, intentar con lessons
-      const { data: lessonsData, error: lessonsError } = await supabase
-        .from('lessons')
-        .select('*')
-        .eq('id', lessonId)
-        .limit(1);
+      setLesson(lessonData);
 
-      if (lessonsData && lessonsData.length > 0) {
-        console.log('✅ Usando lessons (estructura legacy)');
-        setDbStructure(prev => ({ 
-          ...prev, 
-          lessonsTable: 'lessons',
-          progressTable: 'user_lesson_progress',
-          progressIdField: 'user_id'
-        }));
-        loadLessonWithStructure();
-        return;
+      // Verificar si ya está completada
+      const { data: progress } = await supabase
+        .from('lesson_progress')
+        .select('completed')
+        .eq('student_id', user?.id)
+        .eq('lesson_id', lessonId)
+        .single();
+
+      setIsCompleted(progress?.completed || false);
+
+      // Obtener todas las lecciones del curso ordenadas
+      const { data: courseLessons } = await supabase
+        .from('course_lessons')
+        .select('id, title, sort_order, course_modules!inner(course_id, sort_order, title)')
+        .eq('course_modules.course_id', courseId)
+        .order('course_modules.sort_order', { referencedTable: 'course_modules' })
+        .order('sort_order');
+
+      if (courseLessons) {
+        const currentIndex = courseLessons.findIndex(lesson => lesson.id === lessonId);
+        const nextLessonData = courseLessons[currentIndex + 1];
+        
+        if (nextLessonData) {
+          setNextLesson(nextLessonData);
+        }
+
+        // Verificar si es la última lección del módulo
+        const currentModuleId = lessonData.course_modules.id;
+        const currentModuleLessons = courseLessons.filter(l => 
+          l.course_modules.sort_order === lessonData.course_modules.sort_order
+        );
+        
+        const isLastInModule = currentModuleLessons[currentModuleLessons.length - 1]?.id === lessonId;
+        setIsLastLessonOfModule(isLastInModule);
+
+        // Si es la última del módulo, obtener el siguiente módulo
+        if (isLastInModule && nextLessonData) {
+          const nextModuleData = {
+            id: nextLessonData.course_modules.id,
+            title: nextLessonData.course_modules.title,
+            firstLessonId: nextLessonData.id
+          };
+          setNextModule(nextModuleData);
+        }
       }
 
-      console.error('❌ No se pudo detectar la estructura de la base de datos');
-      
-    } catch (error) {
-      console.error('Error detectando estructura:', error);
-    }
-  };
-
-  const loadLessonWithStructure = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Verificar inscripción si estamos usando course_lessons
-      if (dbStructure.lessonsTable === 'course_lessons') {
-        const { data: enrollment, error: enrollmentError } = await supabase
-          .from('enrollments')
-          .select('id')
-          .eq('student_id', user.id)
-          .eq('course_id', courseId)
-          .single();
-
-        if (!enrollment) {
-          console.warn('⚠️ No hay inscripción. Creando inscripción automática...');
-          
-          // CREAR INSCRIPCIÓN AUTOMÁTICA si no existe
-          const { error: createError } = await supabase
-            .from('enrollments')
-            .insert({
-              student_id: user.id,
-              course_id: courseId as string,
-              progress: 0,
-              grade: null,
-              enrolled_at: new Date().toISOString()
-            });
-
-          if (createError) {
-            console.error('Error creando inscripción automática:', createError);
-            // No retornar, continuar intentando cargar la lección
-          } else {
-            console.log('✅ Inscripción automática creada');
-          }
-        }
-
-        // Cargar lección con verificaciones de seguridad más flexibles
-        const { data: lessonData, error } = await supabase
-          .from('course_lessons')
-          .select(`
-            id, title, description, video_url, duration, sort_order, created_at,
-            course_modules (
-              id, course_id, is_published,
-              courses (
-                id, title, is_published
-              )
-            )
-          `)
-          .eq('id', lessonId)
-          .single();
-
-        if (error || !lessonData) {
-          console.error('Error loading lesson from course_lessons:', error);
-          
-          // FALLBACK: Intentar con estructura legacy
-          console.log('🔄 Intentando con estructura legacy...');
-          setDbStructure(prev => ({ 
-            ...prev, 
-            lessonsTable: 'lessons',
-            progressTable: 'user_lesson_progress',
-            progressIdField: 'user_id'
-          }));
-          
-          const { data: legacyLessonData, error: legacyError } = await supabase
-            .from('lessons')
-            .select('*')
-            .eq('id', lessonId)
-            .single();
-
-          if (legacyError || !legacyLessonData) {
-            console.error('Error loading lesson from legacy table:', legacyError);
-            return;
-          }
-          
-          setLesson(legacyLessonData);
-        } else {
-          setLesson(lessonData);
-        }
-      } else {
-        // Estructura legacy
-        const { data: lessonData, error } = await supabase
-          .from('lessons')
-          .select('*')
-          .eq('id', lessonId)
-          .single();
-
-        if (error || !lessonData) {
-          console.error('Error loading lesson from lessons table:', error);
-          return;
-        }
-        setLesson(lessonData);
-      }
-
-      // Verificar progreso (sin fallar si no existe)
-      await checkProgressWithStructure();
-      
-    } catch (error) {
-      console.error('Error loading lesson:', error);
-    } finally {
       setLoading(false);
     }
-  };
 
-  const checkProgressWithStructure = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const progressQuery = supabase
-        .from(dbStructure.progressTable)
-        .select('completed')
-        .eq(dbStructure.progressIdField, user.id)
-        .eq('lesson_id', lessonId);
-
-      // Agregar course_id solo si estamos usando lesson_progress
-      if (dbStructure.progressTable === 'lesson_progress') {
-        progressQuery.eq('course_id', courseId);
-      }
-
-      const { data: progress, error } = await progressQuery.single();
-
-      if (error) {
-        // Es normal que no exista progreso para lecciones no vistas
-        if (error.code === 'PGRST116') { // No rows returned
-          console.log('ℹ️ No hay progreso registrado para esta lección (normal)');
-          setIsCompleted(false);
-        } else {
-          console.warn('Warning checking progress:', error);
-          setIsCompleted(false);
-        }
-      } else if (progress?.completed) {
-        setIsCompleted(true);
-      } else {
-        setIsCompleted(false);
-      }
-    } catch (error) {
-      console.warn('Error checking progress (no crítico):', error);
-      setIsCompleted(false); // Asumir no completado si hay error
+    if (lessonId) {
+      loadLessonData();
     }
-  };
+  }, [lessonId, supabase, courseId]);
 
-  const markAsComplete = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // Auto-tracking logic
+  useEffect(() => {
+    if (isCompleted || !lesson) return;
 
-      const progressData: any = {
-        [dbStructure.progressIdField]: user.id,
-        lesson_id: lessonId as string,
-        completed: true,
-        completed_at: new Date().toISOString(),
-      };
+    let startTime = Date.now();
+    let timeTracker: NodeJS.Timeout;
 
-      // Agregar course_id solo si estamos usando lesson_progress
-      if (dbStructure.progressTable === 'lesson_progress') {
-        progressData.course_id = courseId as string;
+    // Rastrear tiempo en la página
+    timeTracker = setInterval(() => {
+      setWatchTime(Date.now() - startTime);
+    }, 1000);
+
+    // Rastrear scroll hasta el final
+    const handleScroll = () => {
+      const scrollHeight = document.documentElement.scrollHeight;
+      const scrollTop = document.documentElement.scrollTop;
+      const clientHeight = document.documentElement.clientHeight;
+      
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        setHasScrolledToEnd(true);
       }
+    };
 
-      const { error } = await supabase
-        .from(dbStructure.progressTable)
-        .upsert(progressData);
+    // Rastrear finalización de video de YouTube
+    const handleYouTubeMessage = (event: MessageEvent) => {
+      if (event.origin !== 'https://www.youtube.com') return;
+      
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === 'video-ended' || (data.info && data.info.playerState === 0)) {
+          setVideoCompleted(true);
+        }
+      } catch (e) {
+        // Ignorar errores de parsing
+      }
+    };
 
-      if (!error) {
+    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('message', handleYouTubeMessage);
+
+    return () => {
+      clearInterval(timeTracker);
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('message', handleYouTubeMessage);
+    };
+  }, [isCompleted, lesson]);
+
+  // Auto-completar cuando se cumplen los criterios
+  useEffect(() => {
+    if (isCompleted || !lesson) return;
+
+    const shouldAutoComplete = (
+      videoCompleted || // Video completado
+      (watchTime > 30000 && hasScrolledToEnd) || // 30 segundos + scroll completo
+      watchTime > 120000 // 2 minutos mínimo (para lecciones largas sin video)
+    );
+
+    if (shouldAutoComplete) {
+      handleAutoComplete();
+    }
+  }, [videoCompleted, watchTime, hasScrolledToEnd, isCompleted, lesson]);
+
+  const handleAutoComplete = async () => {
+    try {
+      const response = await fetch(`/api/lessons/${lessonId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Completion result:', result);
+        
         setIsCompleted(true);
+        
+        // Actualizar siguiente lección y módulo basado en la respuesta del API
+        setNextLesson(result.nextLesson);
+        setIsLastLessonOfModule(result.isLastLessonOfModule);
+        setNextModule(result.nextModule);
+        
+        // Determinar si el curso está completado (no hay siguiente lección ni módulo)
+        const courseIsCompleted = !result.nextLesson && !result.nextModule;
+        setIsCourseCompleted(courseIsCompleted);
+        console.log('Course is completed:', courseIsCompleted);
+        
         setShowCompletionModal(true);
       }
     } catch (error) {
-      console.error('Error marking lesson as complete:', error);
+      console.error('Error auto-completando lección:', error);
     }
   };
 
-  const getEmbedUrl = (videoUrl?: string) => {
-    if (!videoUrl) return null;
-    
-    if (videoUrl.includes('youtube.com/watch?v=')) {
-      const videoId = videoUrl.split('v=')[1]?.split('&')[0];
-      return `https://www.youtube.com/embed/${videoId}`;
+  const handleNextLesson = () => {
+    setShowCompletionModal(false);
+    if (nextLesson) {
+      router.push(`/dashboard/student/course/${courseId}/lesson/${nextLesson.id}`);
+    } else {
+      router.push(`/dashboard/student/course/${courseId}`);
     }
-    
-    if (videoUrl.includes('youtu.be/')) {
-      const videoId = videoUrl.split('youtu.be/')[1]?.split('?')[0];
-      return `https://www.youtube.com/embed/${videoId}`;
+  };
+
+  const handleNextModule = () => {
+    setShowCompletionModal(false);
+    if (nextModule) {
+      router.push(`/dashboard/student/course/${courseId}/lesson/${nextModule.firstLessonId}`);
+    } else {
+      router.push(`/dashboard/student/course/${courseId}`);
     }
-    
-    return videoUrl;
+  };
+
+  const handleStayHere = () => {
+    setShowCompletionModal(false);
+  };
+
+  const handleManualComplete = async () => {
+    try {
+      const response = await fetch(`/api/lessons/${lessonId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Manual completion result:', result);
+        
+        setIsCompleted(true);
+        
+        // Actualizar siguiente lección y módulo basado en la respuesta del API  
+        setNextLesson(result.nextLesson);
+        setIsLastLessonOfModule(result.isLastLessonOfModule);
+        setNextModule(result.nextModule);
+        
+        // Determinar si el curso está completado (no hay siguiente lección ni módulo)
+        const courseIsCompleted = !result.nextLesson && !result.nextModule;
+        setIsCourseCompleted(courseIsCompleted);
+        console.log('Course is completed:', courseIsCompleted);
+        
+        setShowCompletionModal(true);
+      }
+    } catch (error) {
+      console.error('Error completando lección manualmente:', error);
+    }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mb-4"></div>
-        <p className="text-gray-400">Cargando lección...</p>
-        <p className="text-xs text-gray-500 mt-2">
-          Estructura: {dbStructure.lessonsTable} + {dbStructure.progressTable}
-        </p>
+      <div className="flex flex-col items-center justify-center h-full text-gray-500">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+        <p>Cargando lección...</p>
       </div>
     );
   }
 
   if (!lesson) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 space-y-4">
-        <div className="text-6xl">😕</div>
-        <h2 className="text-xl font-bold text-white">Lección no encontrada</h2>
-        <p className="text-gray-400 text-center max-w-md">
-          No se pudo encontrar esta lección. Verifica que tengas acceso al curso o contacta con soporte.
-        </p>
-        <div className="text-xs text-gray-500 bg-gray-800 p-3 rounded">
-          <p>Debug info:</p>
-          <p>Lesson ID: {lessonId}</p>
-          <p>Course ID: {courseId}</p>
-          <p>DB Structure: {dbStructure.lessonsTable} + {dbStructure.progressTable}</p>
-        </div>
-        <Button 
-          onClick={() => router.push(`/dashboard/student/course/${courseId}`)}
-          variant="primary"
-        >
-          ← Volver al curso
-        </Button>
+      <div className="flex flex-col items-center justify-center h-full text-gray-500">
+        <p className="text-xl mb-2">🚫</p>
+        <p>No pudimos cargar la lección.</p>
       </div>
     );
   }
 
+  const isYouTube = lesson.video_url?.includes('youtube') || lesson.video_url?.includes('youtu.be');
   const embedUrl = getEmbedUrl(lesson.video_url);
 
+  const tabs = [
+    { id: 'class', label: 'Clase', icon: Play },
+    { id: 'resources', label: 'Recursos', icon: FileText },
+    { id: 'tasks', label: 'Tarea', icon: Upload },
+    { id: 'evaluation', label: 'Evaluación', icon: Target }
+  ] as const;
+
   return (
-    <div className="max-w-5xl mx-auto p-4">
-      <div className="w-full aspect-video bg-black rounded-lg mb-6">
-        {embedUrl ? (
-          <iframe
-            src={embedUrl}
-            className="w-full h-full rounded-lg"
-            title={lesson.title}
-            allowFullScreen
-            allow="autoplay; encrypted-media"
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-400">
-            <span>No hay video disponible</span>
+    <div className="min-h-screen bg-[#0f1115] text-white">
+      {/* Header */}
+      <div className="bg-[#161b22] border-b border-[#30363d] px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          {/* Breadcrumbs */}
+          <div className="flex items-center space-x-2 text-sm text-gray-400">
+            <button 
+              onClick={() => router.push(`/dashboard/student/course/${courseId}`)}
+              className="hover:text-white transition-colors"
+            >
+              {lesson.course_modules.title}
+            </button>
+            <span>›</span>
+            <span className="text-white">{lesson.title}</span>
+          </div>
+
+          {/* Navigation Controls */}
+          <div className="flex items-center gap-3">
+            <button className="flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-white transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Anterior</span>
+            </button>
+            
+            <Button 
+              onClick={handleManualComplete}
+              variant={isCompleted ? "secondary" : "primary"}
+              disabled={isCompleted}
+            >
+              {isCompleted ? (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Completada
+                </>
+              ) : (
+                'Marcar como Vista'
+              )}
+            </Button>
+
+            <button className="flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-white transition-colors">
+              <span className="hidden sm:inline">Siguiente</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Lesson Title */}
+      <div className="bg-[#161b22] px-6 py-6 border-b border-[#30363d]">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{lesson.title}</h1>
+          <div className="flex items-center gap-4 text-sm text-gray-400">
+            <span className="flex items-center gap-1">
+              <Clock className="w-4 h-4" />
+              {lesson.duration > 0 ? `${lesson.duration} min` : 'Sin duración'}
+            </span>
+            <span>{new Date(lesson.created_at).toLocaleDateString()}</span>
+            {!isCompleted && (
+              <div className="flex items-center gap-4 text-xs">
+                <span>⏱️ {Math.floor(watchTime / 1000)}s</span>
+                {hasScrolledToEnd && <span className="text-green-400">📖 Leído ✓</span>}
+                {videoCompleted && <span className="text-green-400">🎥 Video ✓</span>}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div className="bg-[#161b22] px-6 border-b border-[#30363d]">
+        <div className="max-w-7xl mx-auto">
+          <nav className="flex space-x-8">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
+                    isActive
+                      ? 'border-cyan-400 text-cyan-400'
+                      : 'border-transparent text-gray-400 hover:text-white hover:border-gray-300'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Tab: Clase */}
+        {activeTab === 'class' && (
+          <div className="space-y-6">
+            {/* Video Player */}
+            <div className="bg-[#161b22] rounded-xl overflow-hidden border border-[#30363d]">
+              <div className="w-full aspect-video bg-black flex items-center justify-center">
+                {embedUrl ? (
+                  isYouTube ? (
+                    <iframe 
+                      src={embedUrl}
+                      className="w-full h-full"
+                      title={lesson.title}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <video 
+                      controls 
+                      className="w-full h-full object-contain" 
+                      src={embedUrl}
+                      onEnded={() => setVideoCompleted(true)}
+                    />
+                  )
+                ) : (
+                  <div className="text-center text-gray-600">
+                    <Play className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <p>Esta lección no tiene video asignado.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="bg-[#161b22] rounded-xl p-6 border border-[#30363d]">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Book className="w-5 h-5 text-cyan-400" />
+                Notas de la Clase
+              </h3>
+              <div className="prose prose-invert max-w-none text-gray-300 whitespace-pre-wrap leading-relaxed">
+                {lesson.description || 'Sin descripción adicional.'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Recursos */}
+        {activeTab === 'resources' && (
+          <div className="space-y-6">
+            <div className="bg-[#161b22] rounded-xl p-6 border border-[#30363d]">
+              <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-cyan-400" />
+                Recursos y Material de Apoyo
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 bg-[#21262d] rounded-lg border border-[#30363d] hover:border-cyan-400/30 transition-colors">
+                  <div className="w-10 h-10 bg-cyan-600/20 rounded-lg flex items-center justify-center">
+                    <Download className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-medium text-white">Material de lectura complementario</h4>
+                    <p className="text-sm text-gray-400">PDF · 2.3 MB</p>
+                  </div>
+                  <button className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                    Descargar
+                  </button>
+                </div>
+                
+                <div className="flex items-center gap-3 p-4 bg-[#21262d] rounded-lg border border-[#30363d] hover:border-cyan-400/30 transition-colors">
+                  <div className="w-10 h-10 bg-cyan-600/20 rounded-lg flex items-center justify-center">
+                    <Download className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-medium text-white">Ejercicios prácticos</h4>
+                    <p className="text-sm text-gray-400">DOCX · 1.1 MB</p>
+                  </div>
+                  <button className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                    Descargar
+                  </button>
+                </div>
+
+                <div className="text-center text-gray-500 py-8 opacity-75">
+                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No hay recursos adicionales disponibles para esta lección.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Tarea */}
+        {activeTab === 'tasks' && (
+          <div className="space-y-6">
+            <div className="bg-[#161b22] rounded-xl p-6 border border-[#30363d]">
+              <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                <Upload className="w-5 h-5 text-yellow-400" />
+                Tarea de la Lección
+              </h3>
+              
+              <div className="space-y-6">
+                {/* Task Instructions */}
+                <div className="bg-[#21262d] rounded-lg p-6 border border-[#30363d]">
+                  <h4 className="font-medium text-white mb-3">Instrucciones:</h4>
+                  <p className="text-gray-300 leading-relaxed">
+                    Completa los ejercicios basados en el contenido de esta lección. 
+                    Asegúrate de revisar todo el material antes de enviar tu tarea.
+                  </p>
+                </div>
+
+                {/* Upload Area */}
+                <div className="border-2 border-dashed border-[#30363d] rounded-lg p-8 text-center hover:border-cyan-400/50 transition-colors">
+                  <Upload className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                  <h4 className="text-lg font-medium text-white mb-2">Sube tu tarea</h4>
+                  <p className="text-gray-400 mb-4">Arrastra y suelta archivos aquí o haz clic para seleccionar</p>
+                  <Button variant="outline">
+                    Seleccionar Archivo
+                  </Button>
+                </div>
+
+                <div className="text-center text-gray-500 py-4">
+                  <p className="text-sm">Formatos permitidos: PDF, DOC, DOCX, TXT (Máx. 10 MB)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Evaluación */}
+        {activeTab === 'evaluation' && (
+          <div className="space-y-6">
+            <div className="bg-[#161b22] rounded-xl p-6 border border-[#30363d]">
+              <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                <Target className="w-5 h-5 text-red-400" />
+                Evaluación de la Lección
+              </h3>
+              
+              <div className="text-center py-12">
+                <div className="bg-[#21262d] rounded-xl p-8 border border-[#30363d] max-w-md mx-auto">
+                  <Target className="w-16 h-16 text-red-400 mx-auto mb-4" />
+                  <h4 className="text-xl font-bold text-white mb-3">Quiz de la Lección</h4>
+                  <p className="text-gray-400 mb-6">
+                    Evalúa tu comprensión del tema con un breve cuestionario.
+                  </p>
+                  <Button variant="primary">
+                    Iniciar Evaluación
+                  </Button>
+                  <p className="text-sm text-gray-500 mt-3">
+                    Tiempo estimado: 10 minutos
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">{lesson.title}</h1>
-          <p className="text-gray-400">
-            {lesson.duration && `${lesson.duration} min`}
-          </p>
-        </div>
-        
-        <Button
-          onClick={markAsComplete}
-          variant="primary"
-          disabled={isCompleted}
-        >
-          {isCompleted ? '✅ Completada' : '✓ Completar'}
-        </Button>
-      </div>
-
-      <div className="bg-gray-900 rounded-lg p-6">
-        <h3 className="text-xl font-bold mb-4">Descripción</h3>
-        <p className="text-gray-300 whitespace-pre-wrap">
-          {lesson.description || 'Sin descripción disponible'}
-        </p>
-      </div>
-
-      {/* Debug info (solo en desarrollo) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 text-xs text-gray-500 bg-gray-800 p-3 rounded">
-          <p>🔧 Debug - Estructura DB detectada:</p>
-          <p>Lecciones: {dbStructure.lessonsTable}</p>
-          <p>Progreso: {dbStructure.progressTable} ({dbStructure.progressIdField})</p>
-        </div>
-      )}
-
+      {/* Modal de Felicitaciones */}
       {showCompletionModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-gray-900 p-8 rounded-2xl max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <div className="text-center">
               <div className="text-6xl mb-4">🎉</div>
-              <h2 className="text-2xl font-bold text-white mb-4">¡Completada!</h2>
-              <p className="text-gray-300 mb-6">¡Excelente trabajo! Has completado esta lección.</p>
+              <h2 className="text-2xl font-bold text-white mb-4">¡Felicidades!</h2>
               
-              <Button
-                onClick={() => {
-                  setShowCompletionModal(false);
-                  router.push(`/dashboard/student/course/${courseId}`);
-                }}
-                variant="primary"
-                className="w-full"
+              {isLastLessonOfModule && nextModule ? (
+                <div className="space-y-4">
+                  <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-green-400 mb-2">🏆 ¡Módulo Completado!</h3>
+                  </div>
+                  <p className="text-gray-300 mb-6">¿Estás listo para el siguiente módulo?</p>
+                  <Button 
+                    onClick={handleNextModule}
+                    variant="primary"
+                  >
+                    🚀 Continuar al siguiente módulo
+                  </Button>
+                </div>
+              ) : nextLesson ? (
+                <div className="space-y-4">
+                  <p className="text-gray-300 mb-6">Ya puedes pasar a la siguiente lección</p>
+                  <Button 
+                    onClick={handleNextLesson}
+                    variant="primary"
+                  >
+                    ➡️ Ir a la siguiente lección
+                  </Button>
+                </div>
+              ) : isCourseCompleted ? (
+                <div className="space-y-4">
+                  <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
+                    <h3 className="text-lg font-semibold text-yellow-400 mb-2">🏅 ¡Curso Completado!</h3>
+                  </div>
+                  <p className="text-gray-300 mb-6">¡Has terminado todo el curso!</p>
+                  <Button 
+                    onClick={() => router.push('/dashboard/student')}
+                    variant="primary"
+                  >
+                    🎓 Ir al Dashboard
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-gray-300 mb-6">¡Lección completada!</p>
+                  <Button 
+                    onClick={() => router.push(`/dashboard/student/course/${courseId}`)}
+                    variant="primary"
+                  >
+                    📚 Volver al Curso
+                  </Button>
+                </div>
+              )}
+              
+              <button 
+                onClick={handleStayHere}
+                className="mt-4 text-gray-400 hover:text-gray-300 text-sm underline"
               >
-                Continuar al curso
-              </Button>
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

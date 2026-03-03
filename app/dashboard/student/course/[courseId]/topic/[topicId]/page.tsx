@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { supabaseGet, supabasePost, supabasePatch, pgIn } from '@/utils/supabase/fetch';
+import { supabaseGet, supabasePost, supabasePatch } from '@/utils/supabase/fetch';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
   ArrowLeft,
@@ -16,13 +16,13 @@ import {
   Presentation,
   Download,
   ExternalLink,
-  Play,
   ChevronLeft,
   ChevronRight,
   Award,
   AlertCircle,
   RotateCcw,
-  HelpCircle
+  HelpCircle,
+  Play
 } from 'lucide-react';
 import { getVideoInfo } from '@/utils/videoEmbed';
 
@@ -171,24 +171,58 @@ export default function StudentTopicPage() {
 
         if (evaluations && evaluations.length > 0) {
           const evalData = evaluations[0];
-          // Questions are stored as JSONB in evaluations.questions column
-          const questions = Array.isArray(evalData.questions) ? evalData.questions : [];
+          
+          // PARSEO SEGURO DE PREGUNTAS
+          let rawQuestions: any[] = [];
+          if (Array.isArray(evalData.questions)) {
+            rawQuestions = evalData.questions;
+          } else if (typeof evalData.questions === 'string') {
+            try { rawQuestions = JSON.parse(evalData.questions); } catch(e) {}
+          }
 
-          if (questions.length > 0) {
+          if (rawQuestions.length > 0) {
             setQuiz({
               id: evalData.id,
               title: evalData.title || 'Quiz del Tema',
               passing_score: evalData.passing_score || 70,
               max_attempts: evalData.max_attempts || 3,
               time_limit_minutes: evalData.time_limit_minutes,
-              questions: questions.map((q: any, idx: number) => ({
-                id: q.id || `q-${idx}`,
-                question_text: q.question_text || q.text || q.question || '',
-                question_type: q.question_type || q.type || 'multiple_choice',
-                options: Array.isArray(q.options) ? q.options : [],
-                points: q.points || 1,
-                order_index: q.order_index ?? idx,
-              })),
+              questions: rawQuestions.map((q: any, idx: number) => {
+                
+                // PARSEO SEGURO DE OPCIONES (Para evitar crash e invisibilidad)
+                let rawOptions: any[] = [];
+                if (Array.isArray(q.options)) {
+                  rawOptions = q.options;
+                } else if (typeof q.options === 'string') {
+                  try { rawOptions = JSON.parse(q.options); } catch(e) {}
+                }
+
+                const safeOptions = rawOptions.map((opt: any, oIdx: number) => {
+                  // Si la opción es solo un string (ej. "Verdadero")
+                  if (typeof opt === 'string') {
+                    return {
+                      id: `opt-${idx}-${oIdx}`,
+                      text: opt,
+                      is_correct: q.correct_answer === opt || false
+                    };
+                  }
+                  // Si la opción es un objeto
+                  return {
+                    id: opt?.id || `opt-${idx}-${oIdx}`,
+                    text: opt?.text || opt?.label || opt?.value || 'Opción sin texto',
+                    is_correct: !!(opt?.is_correct || opt?.isCorrect || opt?.correct)
+                  };
+                });
+
+                return {
+                  id: q.id || `q-${idx}`,
+                  question_text: q.question_text || q.text || q.question || 'Pregunta sin texto',
+                  question_type: q.question_type || q.type || 'multiple_choice',
+                  options: safeOptions,
+                  points: q.points || 1,
+                  order_index: q.order_index ?? idx,
+                };
+              }),
             });
 
             // Check previous attempts
@@ -795,24 +829,18 @@ export default function StudentTopicPage() {
                       <span className="text-cyan-400 mr-2">{qIndex + 1}.</span>
                       {question.question_text}
                     </p>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {question.options.map((option) => (
-                        <label
+                        <button
+                          type="button"
                           key={option.id}
-                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          onClick={() => handleQuizAnswer(question.id, option.id)}
+                          className={`w-full text-left flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${
                             quizAnswers[question.id] === option.id
-                              ? 'border-cyan-500 bg-cyan-500/10'
-                              : 'border-gray-800 hover:border-gray-700'
+                              ? 'border-cyan-500 bg-cyan-500/10 ring-1 ring-cyan-500'
+                              : 'border-gray-800 bg-gray-900 hover:border-gray-600'
                           }`}
                         >
-                          <input
-                            type="radio"
-                            name={question.id}
-                            value={option.id}
-                            checked={quizAnswers[question.id] === option.id}
-                            onChange={() => handleQuizAnswer(question.id, option.id)}
-                            className="sr-only"
-                          />
                           <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                             quizAnswers[question.id] === option.id
                               ? 'border-cyan-500 bg-cyan-500'
@@ -822,8 +850,8 @@ export default function StudentTopicPage() {
                               <div className="w-2 h-2 rounded-full bg-white" />
                             )}
                           </div>
-                          <span className="text-sm text-gray-300">{option.text}</span>
-                        </label>
+                          <span className="text-sm text-gray-300 font-medium">{option.text}</span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -832,7 +860,7 @@ export default function StudentTopicPage() {
                 <button
                   onClick={submitQuiz}
                   disabled={Object.keys(quizAnswers).length < quiz.questions.length}
-                  className="w-full bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl px-6 py-3 font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl px-6 py-4 font-bold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-6"
                 >
                   Enviar respuestas ({Object.keys(quizAnswers).length}/{quiz.questions.length})
                 </button>

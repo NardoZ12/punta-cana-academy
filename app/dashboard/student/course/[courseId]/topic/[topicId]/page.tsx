@@ -197,27 +197,35 @@ export default function StudentTopicPage() {
                   try { rawOptions = JSON.parse(q.options); } catch(e) {}
                 }
 
+                // DETECTOR UNIVERSAL DE RESPUESTA CORRECTA
+                // Soporta ambos formatos: correctAnswer (camelCase del editor) y correct_answer (snake del dashboard)
+                const correctAns = q.correct_answer ?? q.correctAnswer;
+                // Mapa de letras a índices para cuando correct_answer es 'a','b','c','d'
+                const letterToIdx: Record<string, number> = { a: 0, b: 1, c: 2, d: 3, e: 4, f: 5 };
+
                 const safeOptions = rawOptions.map((opt: any, oIdx: number) => {
-                  // Si la opción es solo un string (ej. "Verdadero")
+                  // Si la opción es solo un string (ej. "Verdadero", "Option A")
                   if (typeof opt === 'string') {
-                    // DETECTOR UNIVERSAL: correct_answer puede ser índice (0,1,2) o texto
-                    const isCorrectByIndex = String(q.correct_answer) === String(oIdx);
-                    const isCorrectByText = q.correct_answer === opt;
+                    const isCorrectByIndex = String(correctAns) === String(oIdx);
+                    const isCorrectByText = correctAns === opt;
+                    const isCorrectByLetter = letterToIdx[String(correctAns).toLowerCase()] === oIdx;
                     return {
                       id: `opt-${idx}-${oIdx}`,
                       text: opt,
-                      is_correct: isCorrectByIndex || isCorrectByText
+                      is_correct: isCorrectByIndex || isCorrectByText || isCorrectByLetter
                     };
                   }
-                  // Si la opción es un objeto
+                  // Si la opción es un objeto { id, text, is_correct?, ... }
                   const isCorrectByFlag = !!(opt?.is_correct || opt?.isCorrect || opt?.correct);
-                  const isCorrectByIndex = String(q.correct_answer) === String(oIdx);
+                  const isCorrectByIndex = String(correctAns) === String(oIdx);
+                  const isCorrectById = opt?.id != null && String(correctAns) === String(opt.id);
+                  const isCorrectByLetter = letterToIdx[String(correctAns).toLowerCase()] === oIdx;
                   const optText = opt?.text || opt?.label || opt?.value || 'Opción sin texto';
-                  const isCorrectByText = q.correct_answer === optText;
+                  const isCorrectByText = correctAns === optText;
                   return {
                     id: opt?.id || `opt-${idx}-${oIdx}`,
                     text: optText,
-                    is_correct: isCorrectByFlag || isCorrectByIndex || isCorrectByText
+                    is_correct: isCorrectByFlag || isCorrectByIndex || isCorrectById || isCorrectByLetter || isCorrectByText
                   };
                 });
 
@@ -226,7 +234,7 @@ export default function StudentTopicPage() {
                   question_text: q.question_text || q.text || q.question || 'Pregunta sin texto',
                   question_type: q.question_type || q.type || 'multiple_choice',
                   options: safeOptions,
-                  correct_answer: q.correct_answer,
+                  correct_answer: correctAns,
                   points: q.points || 1,
                   order_index: q.order_index ?? idx,
                 };

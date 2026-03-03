@@ -20,7 +20,6 @@ import {
   ChevronRight,
   Award,
   AlertCircle,
-  RotateCcw,
   HelpCircle,
   Play
 } from 'lucide-react';
@@ -64,6 +63,7 @@ interface QuizQuestion {
   question_text: string;
   question_type: string;
   options: { id: string; text: string; is_correct?: boolean }[];
+  correct_answer?: string;
   points: number;
   order_index: number;
 }
@@ -185,7 +185,7 @@ export default function StudentTopicPage() {
               id: evalData.id,
               title: evalData.title || 'Quiz del Tema',
               passing_score: evalData.passing_score || 70,
-              max_attempts: evalData.max_attempts || 3,
+              max_attempts: 1,
               time_limit_minutes: evalData.time_limit_minutes,
               questions: rawQuestions.map((q: any, idx: number) => {
                 
@@ -200,17 +200,24 @@ export default function StudentTopicPage() {
                 const safeOptions = rawOptions.map((opt: any, oIdx: number) => {
                   // Si la opción es solo un string (ej. "Verdadero")
                   if (typeof opt === 'string') {
+                    // DETECTOR UNIVERSAL: correct_answer puede ser índice (0,1,2) o texto
+                    const isCorrectByIndex = String(q.correct_answer) === String(oIdx);
+                    const isCorrectByText = q.correct_answer === opt;
                     return {
                       id: `opt-${idx}-${oIdx}`,
                       text: opt,
-                      is_correct: q.correct_answer === opt || false
+                      is_correct: isCorrectByIndex || isCorrectByText
                     };
                   }
                   // Si la opción es un objeto
+                  const isCorrectByFlag = !!(opt?.is_correct || opt?.isCorrect || opt?.correct);
+                  const isCorrectByIndex = String(q.correct_answer) === String(oIdx);
+                  const optText = opt?.text || opt?.label || opt?.value || 'Opción sin texto';
+                  const isCorrectByText = q.correct_answer === optText;
                   return {
                     id: opt?.id || `opt-${idx}-${oIdx}`,
-                    text: opt?.text || opt?.label || opt?.value || 'Opción sin texto',
-                    is_correct: !!(opt?.is_correct || opt?.isCorrect || opt?.correct)
+                    text: optText,
+                    is_correct: isCorrectByFlag || isCorrectByIndex || isCorrectByText
                   };
                 });
 
@@ -219,6 +226,7 @@ export default function StudentTopicPage() {
                   question_text: q.question_text || q.text || q.question || 'Pregunta sin texto',
                   question_type: q.question_type || q.type || 'multiple_choice',
                   options: safeOptions,
+                  correct_answer: q.correct_answer,
                   points: q.points || 1,
                   order_index: q.order_index ?? idx,
                 };
@@ -231,11 +239,11 @@ export default function StudentTopicPage() {
             ).catch(() => []);
             setPreviousAttempts((attempts || []).length);
 
-            // If already passed, show results
-            const passed = (attempts || []).find((a: any) => a.passed);
-            if (passed) {
-              setQuizScore(passed.score);
-              setQuizPassed(true);
+            // If already attempted, show last attempt results
+            if (attempts && attempts.length > 0) {
+              const lastAttempt = attempts[attempts.length - 1];
+              setQuizScore(lastAttempt.score);
+              setQuizPassed(!!lastAttempt.passed);
               setQuizSubmitted(true);
             }
           }
@@ -351,6 +359,7 @@ export default function StudentTopicPage() {
     setQuizScore(score);
     setQuizPassed(passed);
     setQuizSubmitted(true);
+    setPreviousAttempts(1); // Block retries immediately
 
     // Save attempt
     try {
@@ -365,26 +374,16 @@ export default function StudentTopicPage() {
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
       });
-      setPreviousAttempts(prev => prev + 1);
 
-      // If passed, update progress
-      if (passed) {
-        await updateProgressField({
-          completed: true,
-          completed_at: new Date().toISOString(),
-          completion_percent: 100,
-        });
-      }
+      // Update progress
+      await updateProgressField({
+        completed: true,
+        completed_at: new Date().toISOString(),
+        completion_percent: 100,
+      });
     } catch (error) {
       console.error('[TopicViewer] Error saving quiz attempt:', error);
     }
-  };
-
-  const retryQuiz = () => {
-    setQuizAnswers({});
-    setQuizSubmitted(false);
-    setQuizScore(null);
-    setQuizPassed(false);
   };
 
   if (loading) {
@@ -761,8 +760,8 @@ export default function StudentTopicPage() {
                 {quiz.passing_score}% para aprobar
               </span>
               <span className="flex items-center gap-1.5">
-                <RotateCcw className="w-4 h-4" />
-                {previousAttempts}/{quiz.max_attempts} intentos
+                <AlertCircle className="w-4 h-4" />
+                1 intento permitido
               </span>
               {quiz.time_limit_minutes && (
                 <span className="flex items-center gap-1.5">
@@ -774,37 +773,27 @@ export default function StudentTopicPage() {
 
             {/* Quiz Results */}
             {quizSubmitted && (
-              <div className={`rounded-xl p-5 mb-6 border ${
+              <div className={`rounded-xl p-6 mb-6 border ${
                 quizPassed
                   ? 'bg-green-500/5 border-green-500/20'
                   : 'bg-red-500/5 border-red-500/20'
               }`}>
-                <div className="flex items-center gap-3">
+                <div className="text-center">
                   {quizPassed ? (
-                    <CheckCircle className="w-8 h-8 text-green-400" />
+                    <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
                   ) : (
-                    <AlertCircle className="w-8 h-8 text-red-400" />
+                    <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
                   )}
-                  <div>
-                    <p className={`text-lg font-bold ${quizPassed ? 'text-green-400' : 'text-red-400'}`}>
-                      {quizScore}% — {quizPassed ? '¡Aprobado!' : 'No aprobado'}
-                    </p>
-                    <p className="text-sm text-gray-400">
-                      {quizPassed
-                        ? '¡Excelente trabajo! Has completado este quiz.'
-                        : `Necesitas ${quiz.passing_score}% para aprobar.`}
-                    </p>
-                  </div>
+                  <p className={`text-3xl font-bold mb-1 ${quizPassed ? 'text-green-400' : 'text-red-400'}`}>
+                    Tu Calificación: {quizScore}/100
+                  </p>
+                  <p className={`text-lg font-semibold mb-2 ${quizPassed ? 'text-green-300' : 'text-red-300'}`}>
+                    {quizPassed ? '¡Aprobado!' : 'No aprobado'}
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    Esta nota ha sido guardada en tu libreta de calificaciones.
+                  </p>
                 </div>
-                {!quizPassed && previousAttempts < quiz.max_attempts && (
-                  <button
-                    onClick={retryQuiz}
-                    className="mt-4 flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Intentar de nuevo ({quiz.max_attempts - previousAttempts} restante{quiz.max_attempts - previousAttempts !== 1 ? 's' : ''})
-                  </button>
-                )}
               </div>
             )}
 
@@ -817,7 +806,7 @@ export default function StudentTopicPage() {
               >
                 {previousAttempts >= quiz.max_attempts
                   ? 'Sin intentos restantes'
-                  : 'Comenzar Quiz'}
+                  : 'Comenzar Evaluación (1 Intento)'}
               </button>
             )}
 
@@ -862,7 +851,7 @@ export default function StudentTopicPage() {
                   disabled={Object.keys(quizAnswers).length < quiz.questions.length}
                   className="w-full bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl px-6 py-4 font-bold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-6"
                 >
-                  Enviar respuestas ({Object.keys(quizAnswers).length}/{quiz.questions.length})
+                  Enviar Evaluación Definitiva ({Object.keys(quizAnswers).length}/{quiz.questions.length})
                 </button>
               </div>
             )}

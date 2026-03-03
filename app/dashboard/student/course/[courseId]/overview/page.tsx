@@ -26,7 +26,8 @@ import {
   File,
   Lock,
   TrendingUp,
-  ClipboardList
+  ClipboardList,
+  BarChart3
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -41,7 +42,7 @@ export default function StudentCourseOverview() {
   const { data: progress, isLoading: progressLoading } = useStudentCourseProgress(courseId, profile?.id);
   
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'content' | 'assignments' | 'exams'>('content');
+  const [activeTab, setActiveTab] = useState<'content' | 'assignments' | 'exams' | 'grades'>('content');
 
   const loading = courseLoading || assignmentsLoading || evaluationsLoading || progressLoading;
 
@@ -93,6 +94,7 @@ export default function StudentCourseOverview() {
     { id: 'content' as const, label: 'Contenido', icon: BookOpen, count: course.totalTopics },
     { id: 'assignments' as const, label: 'Tareas', icon: Target, count: assignments?.pending?.length || 0 },
     { id: 'exams' as const, label: 'Evaluaciones', icon: ClipboardList, count: evaluations?.pending?.length || 0 },
+    { id: 'grades' as const, label: 'Calificaciones', icon: BarChart3, count: 0 },
   ];
 
   return (
@@ -503,6 +505,110 @@ export default function StudentCourseOverview() {
             )}
           </div>
         )}
+
+        {/* Grades Tab */}
+        {activeTab === 'grades' && (() => {
+          // Calculate grade averages
+          const gradedAssignmentsList = assignments?.graded || [];
+          const completedEvalsList = evaluations?.completed || [];
+
+          const avgAssignments = gradedAssignmentsList.length > 0
+            ? Math.round(gradedAssignmentsList.reduce((sum: number, a: any) => {
+                const score = a.submission?.score || 0;
+                const max = a.max_points || 100;
+                return sum + (score / max) * 100;
+              }, 0) / gradedAssignmentsList.length)
+            : null;
+
+          const avgExams = completedEvalsList.length > 0
+            ? Math.round(completedEvalsList.reduce((sum: number, e: any) => sum + (e.bestScore || 0), 0) / completedEvalsList.length)
+            : null;
+
+          const allScores: number[] = [];
+          if (avgAssignments !== null) allScores.push(avgAssignments);
+          if (avgExams !== null) allScores.push(avgExams);
+          const overallGrade = allScores.length > 0
+            ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+            : null;
+
+          return (
+            <div className="space-y-6">
+              {/* Average Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5 text-center">
+                  <BarChart3 className="w-8 h-8 text-cyan-400 mx-auto mb-2" />
+                  <p className="text-3xl font-bold text-white">{overallGrade !== null ? `${overallGrade}%` : '--'}</p>
+                  <p className="text-sm text-gray-400 mt-1">Promedio General</p>
+                </div>
+                <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5 text-center">
+                  <ClipboardList className="w-8 h-8 text-purple-400 mx-auto mb-2" />
+                  <p className="text-3xl font-bold text-white">{avgExams !== null ? `${avgExams}%` : '--'}</p>
+                  <p className="text-sm text-gray-400 mt-1">Promedio Evaluaciones</p>
+                </div>
+                <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5 text-center">
+                  <Target className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
+                  <p className="text-3xl font-bold text-white">{avgAssignments !== null ? `${avgAssignments}%` : '--'}</p>
+                  <p className="text-sm text-gray-400 mt-1">Promedio Tareas</p>
+                </div>
+              </div>
+
+              {/* Grade History */}
+              <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-800">
+                  <h3 className="text-lg font-semibold text-white">Historial de Calificaciones</h3>
+                </div>
+
+                {gradedAssignmentsList.length === 0 && completedEvalsList.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <BarChart3 className="w-12 h-12 text-gray-700 mx-auto mb-3" />
+                    <p className="text-gray-400">Aún no tienes calificaciones registradas.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-800">
+                    {/* Graded evaluations */}
+                    {completedEvalsList.map((evaluation: any) => (
+                      <div key={evaluation.id} className="flex items-center justify-between px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                            <ClipboardList className="w-4 h-4 text-purple-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-white">{evaluation.title}</p>
+                            <p className="text-xs text-gray-500">Evaluación</p>
+                          </div>
+                        </div>
+                        <span className={`text-lg font-bold ${
+                          (evaluation.bestScore || 0) >= 70 ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          {evaluation.bestScore || 0}%
+                        </span>
+                      </div>
+                    ))}
+                    {/* Graded assignments */}
+                    {gradedAssignmentsList.map((assignment: any) => (
+                      <div key={assignment.id} className="flex items-center justify-between px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-yellow-500/10 rounded-lg flex items-center justify-center">
+                            <Target className="w-4 h-4 text-yellow-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-white">{assignment.title}</p>
+                            <p className="text-xs text-gray-500">Tarea</p>
+                          </div>
+                        </div>
+                        <span className={`text-lg font-bold ${
+                          ((assignment.submission?.score || 0) / (assignment.max_points || 100) * 100) >= 70 ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          {assignment.submission?.score || 0}/{assignment.max_points}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
     </div>

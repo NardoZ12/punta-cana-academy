@@ -29,7 +29,6 @@ interface CourseUnit {
   assessment?: UnitAssessment | null;
 }
 
-// Evaluación de unidad
 interface UnitAssessment {
   id: string;
   unit_id: string;
@@ -84,7 +83,6 @@ interface TopicResources {
   additional_resources?: string | { videos?: Array<{ id?: string; url: string; title?: string; provider?: string; embedUrl?: string | null; duration_seconds?: number }>; quiz?: any[] };
 }
 
-// Estado para crear tema con recursos
 interface NewTopicWithResources {
   unitId: string;
   title: string;
@@ -137,21 +135,6 @@ const TABS = [
   { id: 'settings', label: 'Ajustes', icon: Clock },
 ];
 
-const VIDEO_PROVIDERS = [
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'vimeo', label: 'Vimeo' },
-  { value: 'cloudflare', label: 'Cloudflare Stream' },
-  { value: 'bunny', label: 'Bunny.net' },
-  { value: 'custom', label: 'URL Directa' },
-];
-
-const SLIDES_PROVIDERS = [
-  { value: 'google_slides', label: 'Google Slides' },
-  { value: 'canva', label: 'Canva' },
-  { value: 'pdf', label: 'PDF' },
-  { value: 'custom', label: 'URL Directa' },
-];
-
 export default function EditCoursePage() {
   const params = useParams();
   const supabase = createClient();
@@ -179,26 +162,36 @@ export default function EditCoursePage() {
   const [addingTopicToUnit, setAddingTopicToUnit] = useState<string | null>(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
   
-  // NUEVO: Estado para crear tema con recursos completos
   const [creatingTopicWithResources, setCreatingTopicWithResources] = useState<string | null>(null);
   const [newTopicData, setNewTopicData] = useState<NewTopicWithResources | null>(null);
-
-  // NUEVO: Estado para evaluación de unidad
   const [editingAssessment, setEditingAssessment] = useState<{ unit: CourseUnit; assessment: Partial<UnitAssessment> } | null>(null);
+
+  // 🔥 NUEVO: HEARTBEAT (Evita que el profesor pierda la sesión mientras edita)
+  useEffect(() => {
+    const keepAlive = setInterval(async () => {
+      try {
+        await supabase.auth.refreshSession();
+        console.log('[KeepAlive] Sesión renovada para evitar desconexión.');
+      } catch (e) {
+        console.warn('[KeepAlive] Advertencia:', e);
+      }
+    }, 4 * 60 * 1000); // 4 Minutos
+
+    return () => clearInterval(keepAlive);
+  }, [supabase]);
 
   useEffect(() => { fetchCourseData(); }, [courseId]);
 
   const fetchCourseData = async () => {
     setLoading(true);
     try {
-      const { token, url: supabaseUrl, key: supabaseKey } = await getSupabaseHeaders();
+      const { token, url: supabaseUrl, key: supabaseKey } = await getSupabaseHeadersExtended();
       const headers = {
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
         'Authorization': `Bearer ${token}`,
       };
 
-      // Fetch course info
       const ctrl1 = new AbortController();
       const t1 = setTimeout(() => ctrl1.abort(), 15000);
       const courseRes = await fetch(
@@ -217,30 +210,8 @@ export default function EditCoursePage() {
           max_students: course.max_students || 30, duration_hours: course.duration_hours || 10,
           start_date: course.start_date || '', end_date: course.end_date || ''
         });
-
-        // Auto-assign instructor_id if NULL (needed for RLS policies)
-        if (!course.instructor_id) {
-          try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            const userId = payload?.sub || '';
-            if (userId) {
-              console.log('[fetchCourseData] Assigning instructor_id:', userId);
-              const ctrlFix = new AbortController();
-              const tFix = setTimeout(() => ctrlFix.abort(), 10000);
-              await fetch(`${supabaseUrl}/rest/v1/courses?id=eq.${courseId}`, {
-                method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
-                body: JSON.stringify({ instructor_id: userId }),
-                signal: ctrlFix.signal
-              });
-              clearTimeout(tFix);
-            }
-          } catch (e) {
-            console.warn('[fetchCourseData] Failed to set instructor_id:', e);
-          }
-        }
       }
 
-      // Fetch units with topics and resources
       const ctrl2 = new AbortController();
       const t2 = setTimeout(() => ctrl2.abort(), 15000);
       const unitsRes = await fetch(
@@ -249,13 +220,11 @@ export default function EditCoursePage() {
       );
       clearTimeout(t2);
       const unitsData = await unitsRes.json();
-      console.log('[fetchCourseData] Units:', Array.isArray(unitsData) ? unitsData.length : 'error', unitsData);
 
       if (Array.isArray(unitsData)) {
         const processed = unitsData.map((u: any) => ({
           ...u, topics: (u.topics || []).sort((a: any, b: any) => a.order_index - b.order_index)
             .map((t: any) => {
-              // PostgREST returns resources as object (not array) when topic_id has UNIQUE constraint
               const res = t.resources;
               const topicResources = Array.isArray(res) ? (res[0] || null) : (res || null);
               return { ...t, resources: topicResources };
@@ -270,263 +239,56 @@ export default function EditCoursePage() {
     setLoading(false);
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    console.log('[SaveCourse] Saving course:', courseId);
-    try {
-      const { url, headers, token: authToken } = await getSupabaseHeaders();
-      console.log('[SaveCourse] Got headers, patching...');
-
-      // Assign instructor_id if null (extract user ID from JWT)
-      let userId = '';
-      try {
-        const payload = JSON.parse(atob(authToken.split('.')[1]));
-        userId = payload?.sub || '';
-      } catch { /* skip */ }
-      if (userId) {
-        const ctrl0 = new AbortController();
-        const t0 = setTimeout(() => ctrl0.abort(), 15000);
-        await fetch(`${url}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
-          method: 'PATCH', headers, signal: ctrl0.signal,
-          body: JSON.stringify({ instructor_id: userId })
-        });
-        clearTimeout(t0);
-      }
-
-      // 1) Save course data
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
-        method: 'PATCH', headers, signal: ctrl.signal,
-        body: JSON.stringify({
-          title: courseData.title,
-          description: courseData.description,
-          price: courseData.price,
-          level: courseData.level,
-          category: courseData.category,
-          image_url: courseData.image_url || null,
-          max_students: courseData.max_students,
-          duration_hours: courseData.duration_hours,
-          start_date: courseData.start_date || null,
-          end_date: courseData.end_date || null
-        })
-      });
-      clearTimeout(t);
-      console.log('[SaveCourse] Course response:', res.status);
-
-      if (!res.ok) {
-        const body = await res.text();
-        console.error('[SaveCourse] Course error:', body);
-        setSaving(false);
-        alert('❌ Error al guardar curso: ' + body);
-        return;
-      }
-
-      // 2) Save all units
-      const unitErrors: string[] = [];
-      for (const unit of units) {
-        try {
-          const uc = new AbortController();
-          const ut = setTimeout(() => uc.abort(), 15000);
-          const ur = await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
-            method: 'PATCH', headers, signal: uc.signal,
-            body: JSON.stringify({
-              title: unit.title,
-              description: unit.description,
-              learning_objectives: unit.learning_objectives,
-              estimated_hours: unit.estimated_hours,
-              is_published: unit.is_published,
-              order_index: unit.order_index
-            })
-          });
-          clearTimeout(ut);
-          console.log('[SaveCourse] Unit', unit.title, 'response:', ur.status);
-          if (!ur.ok) {
-            const ub = await ur.text();
-            unitErrors.push(`Unidad "${unit.title}": ${ub}`);
-          }
-        } catch (ue: any) {
-          unitErrors.push(`Unidad "${unit.title}": ${ue.message}`);
-        }
-
-        // 3) Save all topics in this unit
-        if (unit.topics && unit.topics.length > 0) {
-          for (const topic of unit.topics) {
-            try {
-              const tc = new AbortController();
-              const tt = setTimeout(() => tc.abort(), 15000);
-              const tr = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
-                method: 'PATCH', headers, signal: tc.signal,
-                body: JSON.stringify({
-                  title: topic.title,
-                  estimated_minutes: topic.estimated_minutes,
-                  is_published: topic.is_published,
-                  order_index: topic.order_index
-                })
-              });
-              clearTimeout(tt);
-              console.log('[SaveCourse] Topic', topic.title, 'response:', tr.status);
-              if (!tr.ok) {
-                const tb = await tr.text();
-                unitErrors.push(`Tema "${topic.title}": ${tb}`);
-              }
-            } catch (te: any) {
-              unitErrors.push(`Tema "${topic.title}": ${te.message}`);
-            }
-          }
-        }
-      }
-
-      setSaving(false);
-
-      if (unitErrors.length > 0) {
-        console.error('[SaveCourse] Partial errors:', unitErrors);
-        await revalidateAfterCourseUpdate(courseId);
-        alert('⚠️ Curso guardado, pero hubo errores en unidades/temas:\n' + unitErrors.join('\n'));
-      } else {
-        await revalidateAfterCourseUpdate(courseId);
-        alert('✅ Cambios guardados correctamente');
-      }
-    } catch (err: any) {
-      console.error('[SaveCourse] Error:', err);
-      setSaving(false);
-      alert('❌ Error inesperado: ' + (err.message || 'Intenta de nuevo'));
-    }
-  };
-
-  const handleTogglePublish = async () => {
-    try {
-      const newStatus = !courseData.is_published;
-      console.log('[TogglePublish] Setting published:', newStatus);
-      const { url, headers } = await getSupabaseHeaders();
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
-        method: 'PATCH', headers, signal: ctrl.signal,
-        body: JSON.stringify({ is_published: newStatus })
-      });
-      clearTimeout(t);
-      console.log('[TogglePublish] Response:', res.status);
-      if (res.ok) {
-        setCourseData(prev => ({ ...prev, is_published: newStatus }));
-        await revalidateAfterCourseUpdate(courseId);
-        alert(newStatus ? '✅ Curso publicado' : '✅ Curso despublicado');
-      } else {
-        const body = await res.text();
-        console.error('[TogglePublish] Error:', body);
-        alert('❌ No se pudo cambiar el estado de publicación: ' + body);
-      }
-    } catch (err: any) {
-      console.error('[TogglePublish] Error:', err);
-      alert('❌ Error: ' + (err.message || 'Intenta de nuevo'));
-    }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
-    const file = e.target.files[0];
-    const fileName = `course-${courseId}-${Date.now()}.${file.name.split('.').pop()}`;
-    setUploading(true);
-    console.log('[ImageUpload] Uploading:', fileName);
-    try {
-      // Storage upload still uses supabase client (storage API works fine)
-      const { error } = await supabase.storage.from('Courses').upload(fileName, file);
-      if (error) { alert('Error subiendo imagen: ' + error.message); setUploading(false); return; }
-      const { data: { publicUrl } } = supabase.storage.from('Courses').getPublicUrl(fileName);
-      console.log('[ImageUpload] Public URL:', publicUrl);
-      
-      // Update course with direct fetch
-      const { url, headers } = await getSupabaseHeaders();
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
-        method: 'PATCH', headers, signal: ctrl.signal,
-        body: JSON.stringify({ image_url: publicUrl })
-      });
-      clearTimeout(t);
-      console.log('[ImageUpload] Update response:', res.status);
-      if (res.ok) {
-        setCourseData(prev => ({ ...prev, image_url: publicUrl }));
-      } else {
-        const body = await res.text();
-        alert('❌ Imagen subida pero no se pudo actualizar el curso: ' + body);
-      }
-    } catch (err: any) {
-      console.error('[ImageUpload] Error:', err);
-      alert('Error: ' + (err.message || 'Intenta de nuevo'));
-    }
-    setUploading(false);
-  };
-
-  // Helper: get auth headers for direct fetch (with timeout protection)
-  const getSupabaseHeaders = async () => {
+  // 🔥 NUEVO: Headers Extendidos con mayor tolerancia de tiempo (Evita caídas en redes lentas)
+  const getSupabaseHeadersExtended = async () => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL no está configurada');
-    if (!key) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY no está configurada');
+    if (!url || !key) throw new Error('Variables de entorno de Supabase no configuradas');
 
     let token = '';
 
-    // Try getSession with 5s timeout (supabase-js can hang)
     try {
       const sessionPromise = supabase.auth.getSession();
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('getSession timeout')), 5000)
+        setTimeout(() => reject(new Error('getSession timeout')), 10000) // Subido a 10s
       );
       const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
       token = result?.data?.session?.access_token || '';
     } catch (e) {
-      console.warn('[getSupabaseHeaders] getSession failed/timed out:', e);
+      console.warn('[getSupabaseHeaders] getSession timeout:', e);
     }
 
-    // Fallback: try refreshSession with 5s timeout
     if (!token) {
       try {
-        console.warn('[getSupabaseHeaders] No token from getSession, trying refresh...');
         const refreshPromise = supabase.auth.refreshSession();
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('refreshSession timeout')), 5000)
+          setTimeout(() => reject(new Error('refreshSession timeout')), 10000)
         );
         const result = await Promise.race([refreshPromise, timeoutPromise]) as any;
         token = result?.data?.session?.access_token || '';
       } catch (e) {
-        console.warn('[getSupabaseHeaders] refreshSession failed/timed out:', e);
+        console.warn('[getSupabaseHeaders] refreshSession timeout:', e);
       }
     }
 
-    // Last resort: read token from sb-* cookies directly
     if (!token && typeof document !== 'undefined') {
       try {
         const cookies = document.cookie.split(';').map(c => c.trim());
-        // supabase-ssr stores session in sb-<ref>-auth-token cookies (may be chunked)
-        const sbCookies = cookies
-          .filter(c => c.startsWith('sb-') && c.includes('-auth-token'))
-          .sort()
-          .map(c => c.substring(c.indexOf('=') + 1));
+        const sbCookies = cookies.filter(c => c.startsWith('sb-') && c.includes('-auth-token')).sort().map(c => c.substring(c.indexOf('=') + 1));
         if (sbCookies.length > 0) {
           const raw = decodeURIComponent(sbCookies.join(''));
           try {
-            const parsed = JSON.parse(raw);
-            token = parsed?.access_token || '';
-            console.log('[getSupabaseHeaders] Got token from cookie fallback');
+            token = JSON.parse(raw)?.access_token || '';
           } catch {
-            // Try base64 decode
-            try {
-              const decoded = JSON.parse(atob(raw));
-              token = decoded?.access_token || '';
-            } catch { /* skip */ }
+            try { token = JSON.parse(atob(raw))?.access_token || ''; } catch {}
           }
         }
-      } catch (e) {
-        console.warn('[getSupabaseHeaders] Cookie fallback failed:', e);
-      }
+      } catch (e) {}
     }
     
-    console.log('[getSupabaseHeaders] token:', token ? token.substring(0, 20) + '...' : 'NULL', 'url:', url ? 'YES' : 'NO', 'key:', key ? 'YES' : 'NO');
-    
     if (!token) {
-      alert('❌ Tu sesión ha expirado. Por favor recarga la página e inicia sesión de nuevo.');
-      throw new Error('No hay sesión activa. Por favor inicia sesión de nuevo.');
+      alert('❌ Tu sesión ha expirado por inactividad extrema. Por favor recarga la página e inicia sesión de nuevo.');
+      throw new Error('No hay sesión activa.');
     }
     
     return { token, url, key, headers: {
@@ -537,607 +299,275 @@ export default function EditCoursePage() {
     }};
   };
 
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { url, headers } = await getSupabaseHeadersExtended();
+      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({
+          title: courseData.title, description: courseData.description, price: courseData.price,
+          level: courseData.level, category: courseData.category, image_url: courseData.image_url || null,
+          max_students: courseData.max_students, duration_hours: courseData.duration_hours,
+          start_date: courseData.start_date || null, end_date: courseData.end_date || null
+        })
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+
+      for (const unit of units) {
+        await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
+          method: 'PATCH', headers,
+          body: JSON.stringify({ title: unit.title, description: unit.description, estimated_hours: unit.estimated_hours, is_published: unit.is_published, order_index: unit.order_index })
+        });
+
+        if (unit.topics) {
+          for (const topic of unit.topics) {
+            await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
+              method: 'PATCH', headers,
+              body: JSON.stringify({ title: topic.title, estimated_minutes: topic.estimated_minutes, is_published: topic.is_published, order_index: topic.order_index })
+            });
+          }
+        }
+      }
+      setSaving(false);
+      await revalidateAfterCourseUpdate(courseId);
+      alert('✅ Cambios guardados correctamente');
+    } catch (err: any) {
+      setSaving(false);
+      alert('❌ Error inesperado: ' + (err.message || 'Intenta de nuevo'));
+    }
+  };
+
+  const handleTogglePublish = async () => {
+    try {
+      const newStatus = !courseData.is_published;
+      const { url, headers } = await getSupabaseHeadersExtended();
+      const res = await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ is_published: newStatus })
+      });
+      if (res.ok) {
+        setCourseData(prev => ({ ...prev, is_published: newStatus }));
+        await revalidateAfterCourseUpdate(courseId);
+        alert(newStatus ? '✅ Curso publicado' : '✅ Curso despublicado');
+      }
+    } catch (err) {}
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    const file = e.target.files[0];
+    const fileName = `course-${courseId}-${Date.now()}.${file.name.split('.').pop()}`;
+    setUploading(true);
+    try {
+      const { error } = await supabase.storage.from('Courses').upload(fileName, file);
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('Courses').getPublicUrl(fileName);
+      
+      const { url, headers } = await getSupabaseHeadersExtended();
+      await fetch(`${url}/rest/v1/courses?id=eq.${courseId}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ image_url: publicUrl })
+      });
+      setCourseData(prev => ({ ...prev, image_url: publicUrl }));
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+    setUploading(false);
+  };
+
   const handleAddUnit = async () => {
     if (!newUnitTitle.trim()) return;
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      
-      // Get safe order_index: query max from DB to avoid duplicate key
-      const ctrlMax = new AbortController();
-      const tMax = setTimeout(() => ctrlMax.abort(), 10000);
+      const { url, headers } = await getSupabaseHeadersExtended();
       let safeOrderIndex = units.length;
-      try {
-        const maxRes = await fetch(
-          `${url}/rest/v1/course_units?course_id=eq.${courseId}&select=order_index&order=order_index.desc&limit=1`,
-          { headers: { ...headers, 'Prefer': '' }, signal: ctrlMax.signal }
-        );
-        clearTimeout(tMax);
-        const maxData = await maxRes.json();
-        if (Array.isArray(maxData) && maxData.length > 0) {
-          safeOrderIndex = (maxData[0].order_index ?? 0) + 1;
-        }
-      } catch { clearTimeout(tMax); }
       
-      console.log('[AddUnit] Creating unit with order_index:', safeOrderIndex);
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/course_units`, {
-        method: 'POST', headers, signal: ctrl.signal,
+        method: 'POST', headers,
         body: JSON.stringify({ course_id: courseId, title: newUnitTitle, order_index: safeOrderIndex, is_published: true })
       });
-      clearTimeout(t);
       const data = await res.json();
-      console.log('[AddUnit] Response:', res.status, data);
       if (res.ok && data?.[0]) {
         setUnits([...units, { ...data[0], topics: [] }]);
         setNewUnitTitle('');
         setExpandedUnits(prev => new Set([...prev, data[0].id]));
-      } else {
-        console.error('Error creating unit:', data);
-        alert('Error al crear unidad: ' + (data?.message || JSON.stringify(data)));
       }
-    } catch (err: any) {
-      console.error('Error creating unit:', err);
-      alert('Error al crear unidad: ' + err.message);
-    }
+    } catch (err: any) {}
   };
 
   const handleUpdateUnit = async (unit: CourseUnit) => {
-    console.log('[UpdateUnit] Updating:', unit.id, unit.title);
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      // Use RPC to bypass RLS
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
+      const { url, headers } = await getSupabaseHeadersExtended();
       const res = await fetch(`${url}/rest/v1/rpc/update_course_unit`, {
-        method: 'POST', headers: { ...headers, 'Prefer': '' }, signal: ctrl.signal,
-        body: JSON.stringify({
-          p_unit_id: unit.id,
-          p_course_id: courseId,
-          p_title: unit.title,
-          p_description: unit.description || '',
-          p_is_published: unit.is_published ?? true
-        })
+        method: 'POST', headers: { ...headers, 'Prefer': '' },
+        body: JSON.stringify({ p_unit_id: unit.id, p_course_id: courseId, p_title: unit.title, p_description: unit.description || '', p_is_published: unit.is_published ?? true })
       });
-      clearTimeout(t);
-      console.log('[UpdateUnit] RPC Response:', res.status);
       if (res.ok) {
         setUnits(units.map(u => u.id === unit.id ? unit : u));
         setEditingUnit(null);
-      } else {
-        // Fallback to direct PATCH if RPC doesn't exist
-        console.warn('[UpdateUnit] RPC failed, trying direct PATCH...');
-        const ctrl2 = new AbortController();
-        const t2 = setTimeout(() => ctrl2.abort(), 15000);
-        const res2 = await fetch(`${url}/rest/v1/course_units?id=eq.${unit.id}`, {
-          method: 'PATCH', headers, signal: ctrl2.signal,
-          body: JSON.stringify({
-            title: unit.title, description: unit.description, learning_objectives: unit.learning_objectives,
-            estimated_hours: unit.estimated_hours, is_published: unit.is_published
-          })
-        });
-        clearTimeout(t2);
-        if (res2.ok) { setUnits(units.map(u => u.id === unit.id ? unit : u)); setEditingUnit(null); }
-        else { const body = await res2.text(); alert('Error al actualizar unidad: ' + body); }
       }
-    } catch (err: any) {
-      console.error('[UpdateUnit] Error:', err);
-      alert('Error al actualizar: ' + err.message);
-    }
+    } catch (err: any) {}
   };
 
   const handleDeleteUnit = async (unitId: string) => {
     if (!confirm('¿Eliminar esta unidad y todo su contenido?')) return;
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      // First delete all topics in this unit
-      const ctrl0 = new AbortController();
-      const t0 = setTimeout(() => ctrl0.abort(), 15000);
-      await fetch(`${url}/rest/v1/topic_resources?unit_id=eq.${unitId}`, {
-        method: 'DELETE', headers, signal: ctrl0.signal
-      });
-      clearTimeout(t0);
-
-      const ctrl1 = new AbortController();
-      const t1 = setTimeout(() => ctrl1.abort(), 15000);
-      await fetch(`${url}/rest/v1/unit_topics?unit_id=eq.${unitId}`, {
-        method: 'DELETE', headers, signal: ctrl1.signal
-      });
-      clearTimeout(t1);
-
-      // Then delete the unit
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/course_units?id=eq.${unitId}`, {
-        method: 'DELETE', headers, signal: ctrl.signal
-      });
-      clearTimeout(t);
-      console.log('[DeleteUnit] Status:', res.status);
+      const { url, headers } = await getSupabaseHeadersExtended();
+      await fetch(`${url}/rest/v1/topic_resources?unit_id=eq.${unitId}`, { method: 'DELETE', headers });
+      await fetch(`${url}/rest/v1/unit_topics?unit_id=eq.${unitId}`, { method: 'DELETE', headers });
+      const res = await fetch(`${url}/rest/v1/course_units?id=eq.${unitId}`, { method: 'DELETE', headers });
       if (res.ok || res.status === 204) {
         setUnits(units.filter(u => u.id !== unitId));
-      } else {
-        const body = await res.text();
-        console.error('[DeleteUnit] Failed:', body);
-        alert('Error al eliminar unidad: ' + body);
       }
-    } catch (err: any) {
-      console.error('Error deleting unit:', err);
-      alert('Error al eliminar: ' + err.message);
-    }
+    } catch (err: any) {}
   };
 
   const handleAddTopic = async (unitId: string) => {
     if (!newTopicTitle.trim()) return;
     const unit = units.find(u => u.id === unitId);
-    console.log('[AddTopic] Creating topic:', newTopicTitle, 'in unit:', unitId);
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      
-      // Get safe order_index from DB to avoid unique constraint violation
+      const { url, headers } = await getSupabaseHeadersExtended();
       let safeOrderIndex = unit?.topics?.length || 0;
-      try {
-        const ctrlMax = new AbortController();
-        const tMax = setTimeout(() => ctrlMax.abort(), 10000);
-        const maxRes = await fetch(
-          `${url}/rest/v1/unit_topics?unit_id=eq.${unitId}&select=order_index&order=order_index.desc&limit=1`,
-          { headers: { ...headers, 'Prefer': '' }, signal: ctrlMax.signal }
-        );
-        clearTimeout(tMax);
-        const maxData = await maxRes.json();
-        if (Array.isArray(maxData) && maxData.length > 0) {
-          safeOrderIndex = (maxData[0].order_index ?? 0) + 1;
-        }
-      } catch (e) { console.warn('[AddTopic] Could not get max order_index:', e); }
       
-      console.log('[AddTopic] Using order_index:', safeOrderIndex);
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
       const res = await fetch(`${url}/rest/v1/unit_topics`, {
-        method: 'POST', headers, signal: ctrl.signal,
-        body: JSON.stringify({
-          unit_id: unitId, course_id: courseId, title: newTopicTitle,
-          order_index: safeOrderIndex, is_published: true
-        })
+        method: 'POST', headers,
+        body: JSON.stringify({ unit_id: unitId, course_id: courseId, title: newTopicTitle, order_index: safeOrderIndex, is_published: true })
       });
-      clearTimeout(t);
       const data = await res.json();
-      console.log('[AddTopic] Response:', res.status, data);
       if (res.ok && data?.[0]) {
         setUnits(units.map(u => u.id === unitId ? { ...u, topics: [...(u.topics || []), { ...data[0], resources: null }] } : u));
         setNewTopicTitle(''); setAddingTopicToUnit(null);
-      } else {
-        if (JSON.stringify(data).includes('unique') || JSON.stringify(data).includes('duplicate')) {
-          alert('El tema ya existía. Recargando datos...');
-          await fetchCourseData();
-        } else {
-          alert('Error al crear tema: ' + (data?.message || JSON.stringify(data)));
-        }
       }
-    } catch (err: any) {
-      console.error('[AddTopic] Error:', err);
-      alert('Error al crear tema: ' + err.message);
-    }
+    } catch (err: any) {}
   };
 
   const [savingTopic, setSavingTopic] = useState(false);
 
   const handleUpdateTopic = async (topic: UnitTopic) => {
-    console.log('[UpdateTopic] Updating:', topic.id, topic.title);
     setSavingTopic(true);
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      // Use RPC to bypass RLS
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
+      const { url, headers } = await getSupabaseHeadersExtended();
       const res = await fetch(`${url}/rest/v1/rpc/update_unit_topic`, {
-        method: 'POST', headers: { ...headers, 'Prefer': '' }, signal: ctrl.signal,
-        body: JSON.stringify({
-          p_topic_id: topic.id,
-          p_course_id: courseId,
-          p_title: topic.title,
-          p_estimated_minutes: topic.estimated_minutes || 30,
-          p_is_published: topic.is_published ?? true
-        })
+        method: 'POST', headers: { ...headers, 'Prefer': '' },
+        body: JSON.stringify({ p_topic_id: topic.id, p_course_id: courseId, p_title: topic.title, p_estimated_minutes: topic.estimated_minutes || 30, p_is_published: topic.is_published ?? true })
       });
-      clearTimeout(t);
-      const responseData = await res.text();
-      console.log('[UpdateTopic] RPC Response:', res.status, responseData);
-      setSavingTopic(false);
       if (res.ok) {
         setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
         setEditingTopic(null);
-        console.log('[UpdateTopic] Success!');
-      } else {
-        // Fallback to direct PATCH if RPC doesn't exist
-        console.warn('[UpdateTopic] RPC failed, trying direct PATCH...');
-        const ctrl2 = new AbortController();
-        const t2 = setTimeout(() => ctrl2.abort(), 15000);
-        const res2 = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topic.id}`, {
-          method: 'PATCH', headers, signal: ctrl2.signal,
-          body: JSON.stringify({
-            title: topic.title, estimated_minutes: topic.estimated_minutes, is_published: topic.is_published
-          })
-        });
-        clearTimeout(t2);
-        const rd2 = await res2.text();
-        console.log('[UpdateTopic] PATCH fallback:', res2.status, rd2);
-        if (res2.ok) {
-          setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topic.id ? topic : t) })));
-          setEditingTopic(null);
-        } else {
-          alert('Error al actualizar tema: ' + rd2);
-        }
       }
-    } catch (err: any) {
-      console.error('[UpdateTopic] Error:', err);
-      setSavingTopic(false);
-      alert('Error al actualizar: ' + err.message);
-    }
+    } catch (err: any) {}
+    setSavingTopic(false);
   };
 
   const handleDeleteTopic = async (topicId: string, unitId: string) => {
     if (!confirm('¿Eliminar este tema?')) return;
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      // Use RPC to bypass RLS
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(`${url}/rest/v1/rpc/delete_unit_topic`, {
-        method: 'POST', headers: { ...headers, 'Prefer': '' }, signal: ctrl.signal,
+      const { url, headers } = await getSupabaseHeadersExtended();
+      await fetch(`${url}/rest/v1/rpc/delete_unit_topic`, {
+        method: 'POST', headers: { ...headers, 'Prefer': '' },
         body: JSON.stringify({ p_topic_id: topicId, p_course_id: courseId })
       });
-      clearTimeout(t);
-      console.log('[DeleteTopic] RPC Status:', res.status);
-      if (res.ok) {
-        setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
-      } else {
-        // Fallback to direct DELETE if RPC doesn't exist
-        console.warn('[DeleteTopic] RPC failed, trying direct DELETE...');
-        const ctrl0 = new AbortController();
-        const t0 = setTimeout(() => ctrl0.abort(), 15000);
-        await fetch(`${url}/rest/v1/topic_resources?topic_id=eq.${topicId}`, {
-          method: 'DELETE', headers, signal: ctrl0.signal
-        });
-        clearTimeout(t0);
-        const ctrl2 = new AbortController();
-        const t2 = setTimeout(() => ctrl2.abort(), 15000);
-        const res2 = await fetch(`${url}/rest/v1/unit_topics?id=eq.${topicId}`, {
-          method: 'DELETE', headers, signal: ctrl2.signal
-        });
-        clearTimeout(t2);
-        if (res2.ok || res2.status === 204) {
-          setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
-        } else {
-          const body = await res2.text();
-          alert('Error al eliminar tema: ' + body);
-        }
-      }
-    } catch (err: any) {
-      console.error('Error deleting topic:', err);
-      alert('Error al eliminar: ' + err.message);
-    }
+      setUnits(units.map(u => u.id === unitId ? { ...u, topics: u.topics?.filter(t => t.id !== topicId) } : u));
+    } catch (err: any) {}
   };
 
-  // NUEVO: Iniciar creación de tema con recursos
   const handleStartCreateTopicWithResources = (unitId: string) => {
     setCreatingTopicWithResources(unitId);
     setNewTopicData({
-      unitId,
-      title: '',
-      estimated_minutes: 30,
-      is_published: true,
-      introduction: '',
-      videos: [],
-      documents: [],
-      quiz: []
+      unitId, title: '', estimated_minutes: 30, is_published: true, introduction: '',
+      videos: [], documents: [], quiz: []
     });
   };
 
-  // NUEVO: Crear tema con todos sus recursos
   const handleCreateTopicWithResources = async () => {
-    if (!newTopicData || !newTopicData.title.trim()) {
-      alert('Por favor ingresa un título para el tema');
-      return;
-    }
-
+    if (!newTopicData || !newTopicData.title.trim()) { alert('Por favor ingresa un título'); return; }
     const unit = units.find(u => u.id === newTopicData.unitId);
     if (!unit) return;
 
-    // 1. Crear el tema via direct fetch (supabase-js client can abort)
     let topicData: any;
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      // Get safe order_index from DB
-      let safeOrderIndex = unit.topics?.length || 0;
-      try {
-        const ctrlMax = new AbortController();
-        const tMax = setTimeout(() => ctrlMax.abort(), 10000);
-        const maxRes = await fetch(
-          `${url}/rest/v1/unit_topics?unit_id=eq.${newTopicData.unitId}&select=order_index&order=order_index.desc&limit=1`,
-          { headers: { ...headers, 'Prefer': '' }, signal: ctrlMax.signal }
-        );
-        clearTimeout(tMax);
-        const maxData = await maxRes.json();
-        if (Array.isArray(maxData) && maxData.length > 0) {
-          safeOrderIndex = (maxData[0].order_index ?? 0) + 1;
-        }
-      } catch {}
-      
+      const { url, headers } = await getSupabaseHeadersExtended();
       const res = await fetch(`${url}/rest/v1/unit_topics`, {
-        method: 'POST', headers, signal: ctrl.signal,
-        body: JSON.stringify({
-          unit_id: newTopicData.unitId,
-          course_id: courseId,
-          title: newTopicData.title,
-          order_index: safeOrderIndex,
-          is_published: newTopicData.is_published ?? true,
-          estimated_minutes: newTopicData.estimated_minutes
-        })
+        method: 'POST', headers,
+        body: JSON.stringify({ unit_id: newTopicData.unitId, course_id: courseId, title: newTopicData.title, order_index: unit.topics?.length || 0, is_published: newTopicData.is_published ?? true, estimated_minutes: newTopicData.estimated_minutes })
       });
-      clearTimeout(t);
       const result = await res.json();
-      console.log('[CreateTopic] Insert result:', res.status, result);
-      if (!res.ok) {
-        alert('Error al crear el tema: ' + (result?.message || JSON.stringify(result)));
-        return;
-      }
+      if (!res.ok) throw new Error(result?.message);
       topicData = result?.[0] || result;
-    } catch (err: any) {
-      console.error('[CreateTopic] Insert error:', err);
-      alert('Error al crear el tema: ' + err.message);
-      return;
-    }
+    } catch (err: any) { alert('Error: ' + err.message); return; }
 
-    if (!topicData?.id) {
-      alert('Error al crear el tema: no se obtuvo ID');
-      return;
-    }
+    if (!topicData?.id) return;
 
-    // 2. Crear los recursos del tema via REST directo (bypass supabase-js que cuelga)
     const mainVideo = newTopicData.videos[0];
-    const additionalVideos = newTopicData.videos.slice(1);
-    const pdfDoc = newTopicData.documents.find(d => d.type === 'pdf');
-    const slidesDoc = newTopicData.documents.find(d => d.type === 'slides');
-
-    const sanitizeVP = (p: string | undefined | null) => {
-      if (!p) return null;
-      return ['youtube','vimeo','cloudflare','bunny','custom'].includes(p) ? p : 'custom';
-    };
-    const sanitizeSP = (p: string | undefined | null) => {
-      if (!p) return null;
-      return ['google_slides','canva','pdf','custom'].includes(p) ? p : 'custom';
-    };
-
     let parsedResource = null;
     try {
-      const { url: sUrl, headers: sHeaders } = await getSupabaseHeaders();
-
+      const { url: sUrl, headers: sHeaders } = await getSupabaseHeadersExtended();
       const rpcPayload = {
-        p_topic_id: topicData.id,
-        p_unit_id: newTopicData.unitId,
-        p_course_id: courseId,
-        p_introduction: newTopicData.introduction || ' ',
-        p_introduction_format: 'markdown',
-        p_video_url: mainVideo?.url || null,
-        p_video_provider: mainVideo?.url ? sanitizeVP(mainVideo?.provider) : null,
-        p_video_duration_seconds: mainVideo?.duration_seconds || null,
-        p_pdf_url: pdfDoc?.url || null,
-        p_pdf_title: pdfDoc?.title || null,
-        p_slides_url: slidesDoc?.url || null,
-        p_slides_provider: slidesDoc?.url ? sanitizeSP(slidesDoc?.provider) : null,
+        p_topic_id: topicData.id, p_unit_id: newTopicData.unitId, p_course_id: courseId,
+        p_introduction: newTopicData.introduction || ' ', p_introduction_format: 'markdown',
+        p_video_url: mainVideo?.url || null, p_video_provider: mainVideo?.provider || null, p_video_duration_seconds: mainVideo?.duration_seconds || null,
+        p_pdf_url: newTopicData.documents.find(d => d.type === 'pdf')?.url || null,
+        p_pdf_title: newTopicData.documents.find(d => d.type === 'pdf')?.title || null,
+        p_slides_url: newTopicData.documents.find(d => d.type === 'slides')?.url || null,
+        p_slides_provider: newTopicData.documents.find(d => d.type === 'slides')?.provider || null,
         p_is_published: newTopicData.is_published ?? false,
-        p_additional_resources: { videos: additionalVideos || [], quiz: newTopicData.quiz || [] }
+        p_additional_resources: { videos: newTopicData.videos.slice(1) || [], quiz: newTopicData.quiz || [] }
       };
-      const ctrlR = new AbortController();
-      const tR = setTimeout(() => ctrlR.abort(), 15000);
-      const resInsert = await fetch(`${sUrl}/rest/v1/rpc/upsert_topic_resource`, {
-        method: 'POST',
-        headers: sHeaders,
-        body: JSON.stringify(rpcPayload),
-        signal: ctrlR.signal,
-      });
-      clearTimeout(tR);
-      const resBody = await resInsert.text();
-      console.log('[CreateTopic] RPC response:', resInsert.status, resBody.substring(0, 200));
-      if (!resInsert.ok) {
-        console.error('[CreateTopic] Resource RPC error:', resInsert.status, resBody);
-      } else {
-        try { parsedResource = JSON.parse(resBody); } catch {}
+      const resInsert = await fetch(`${sUrl}/rest/v1/rpc/upsert_topic_resource`, { method: 'POST', headers: sHeaders, body: JSON.stringify(rpcPayload) });
+      parsedResource = await resInsert.json();
+
+      // 🔥 CORRECCIÓN: Si el profesor usó el modal de "Crear Tema con Recursos", también guardamos el quiz en "evaluations"
+      if (newTopicData.quiz && newTopicData.quiz.length > 0) {
+        await fetch(`${sUrl}/rest/v1/evaluations`, {
+          method: 'POST', headers: sHeaders,
+          body: JSON.stringify({
+            scope: 'topic_quiz', course_id: courseId, unit_id: newTopicData.unitId, topic_id: topicData.id,
+            title: `Quiz: ${newTopicData.title}`, questions: newTopicData.quiz,
+            passing_score: 70, max_attempts: 3, is_published: newTopicData.is_published ?? false
+          })
+        });
       }
-    } catch (resErr: any) {
-      console.error('[CreateTopic] Resource insert error:', resErr);
-    }
+    } catch (resErr: any) {}
 
-    // 3. Actualizar estado local
-    setUnits(units.map(u => u.id === newTopicData.unitId ? {
-      ...u,
-      topics: [...(u.topics || []), { ...topicData, resources: parsedResource || null }]
-    } : u));
-
-    // 4. Limpiar estados
-    setCreatingTopicWithResources(null);
-    setNewTopicData(null);
+    setUnits(units.map(u => u.id === newTopicData.unitId ? { ...u, topics: [...(u.topics || []), { ...topicData, resources: parsedResource || null }] } : u));
+    setCreatingTopicWithResources(null); setNewTopicData(null);
   };
 
   const handleSaveResources = async (topicId: string, data: TopicResourceData) => {
     const topic = editingResources?.topic;
     if (!topic) return;
     
-    // Extraer video principal y adicionales
     const mainVideo = data.videos[0];
-    const additionalVideos = data.videos.slice(1);
     const pdfDoc = data.documents.find(d => d.type === 'pdf');
     const slidesDoc = data.documents.find(d => d.type === 'slides');
 
-    // Sanitize provider to match DB CHECK constraint
-    const sanitizeProvider = (p: string | undefined | null) => {
-      if (!p) return null;
-      const valid = ['youtube', 'vimeo', 'cloudflare', 'bunny', 'custom'];
-      return valid.includes(p) ? p : 'custom';
-    };
-
-    const sanitizeSlidesProvider = (p: string | undefined | null) => {
-      if (!p) return null;
-      const valid = ['google_slides', 'canva', 'pdf', 'custom'];
-      return valid.includes(p) ? p : 'custom';
-    };
-
-    console.log('[SaveResources] Starting save for topic:', topicId);
-    console.log('[SaveResources] PDF:', pdfDoc?.url || '(none)', '| Slides:', slidesDoc?.url || '(none)');
-    console.log('[SaveResources] Videos:', data.videos.length, '| Quiz questions:', data.quiz.length);
-
     try {
-      const { url: supabaseUrl, headers, token: authToken } = await getSupabaseHeaders();
-
-      // Ensure instructor_id is set (RLS policies depend on it)
-      let userId = '';
-      try {
-        const jwtPayload = JSON.parse(atob(authToken.split('.')[1]));
-        userId = jwtPayload?.sub || '';
-        if (userId) {
-          const ctrlI = new AbortController();
-          const tI = setTimeout(() => ctrlI.abort(), 5000);
-          await fetch(`${supabaseUrl}/rest/v1/courses?id=eq.${courseId}&instructor_id=is.null`, {
-            method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ instructor_id: userId }),
-            signal: ctrlI.signal
-          });
-          clearTimeout(tI);
-        }
-      } catch { /* non-critical */ }
-
-      const payload = {
-        topic_id: topicId,
-        unit_id: topic.unit_id,
-        course_id: courseId,
-        introduction: data.introduction || ' ',
-        introduction_format: data.introduction_format || 'markdown',
-        video_url: mainVideo?.url || null,
-        video_provider: mainVideo?.url ? sanitizeProvider(mainVideo?.provider) : null,
-        video_duration_seconds: mainVideo?.duration_seconds || null,
-        pdf_url: pdfDoc?.url?.trim() || null,
-        pdf_title: pdfDoc?.title?.trim() || null,
-        slides_url: slidesDoc?.url?.trim() || null,
-        slides_provider: slidesDoc?.url?.trim() ? sanitizeSlidesProvider(slidesDoc?.provider || 'google_slides') : null,
-        is_published: data.is_published ?? false,
-        additional_resources: { videos: additionalVideos || [], quiz: data.quiz || [] }
-      };
-
-      console.log('[SaveResources] Payload pdf_url:', payload.pdf_url, '| slides_url:', payload.slides_url, '| slides_provider:', payload.slides_provider);
-      console.log('[SaveResources] Documents array:', JSON.stringify(data.documents));
-
-      // === Save topic_resources via RPC (SECURITY DEFINER bypasses RLS) ===
-      let savedResource: any = null;
+      const { url: supabaseUrl, headers } = await getSupabaseHeadersExtended();
 
       const rpcPayload = {
-        p_topic_id: payload.topic_id,
-        p_unit_id: payload.unit_id,
-        p_course_id: payload.course_id,
-        p_introduction: payload.introduction,
-        p_introduction_format: payload.introduction_format,
-        p_video_url: payload.video_url,
-        p_video_provider: payload.video_provider,
-        p_video_duration_seconds: payload.video_duration_seconds,
-        p_pdf_url: payload.pdf_url,
-        p_pdf_title: payload.pdf_title,
-        p_slides_url: payload.slides_url,
-        p_slides_provider: payload.slides_provider,
-        p_is_published: payload.is_published,
-        p_additional_resources: payload.additional_resources,
+        p_topic_id: topicId, p_unit_id: topic.unit_id, p_course_id: courseId,
+        p_introduction: data.introduction || ' ', p_introduction_format: data.introduction_format || 'markdown',
+        p_video_url: mainVideo?.url || null, p_video_provider: mainVideo?.provider || null, p_video_duration_seconds: mainVideo?.duration_seconds || null,
+        p_pdf_url: pdfDoc?.url?.trim() || null, p_pdf_title: pdfDoc?.title?.trim() || null,
+        p_slides_url: slidesDoc?.url?.trim() || null, p_slides_provider: slidesDoc?.provider || null,
+        p_is_published: data.is_published ?? false,
+        p_additional_resources: { videos: data.videos.slice(1) || [], quiz: data.quiz || [] }
       };
 
-      console.log('[SaveResources] Calling RPC upsert_topic_resource...');
-      console.log('[SaveResources] RPC payload slides:', rpcPayload.p_slides_url, rpcPayload.p_slides_provider);
-      const ctrlRpc = new AbortController();
-      const tRpc = setTimeout(() => ctrlRpc.abort(), 15000);
-      const rpcRes = await fetch(
-        `${supabaseUrl}/rest/v1/rpc/upsert_topic_resource`,
-        {
-          method: 'POST',
-          headers: { ...headers, 'Prefer': '' },
-          body: JSON.stringify(rpcPayload),
-          signal: ctrlRpc.signal,
-        }
-      );
-      clearTimeout(tRpc);
+      const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/upsert_topic_resource`, {
+        method: 'POST', headers: { ...headers, 'Prefer': '' }, body: JSON.stringify(rpcPayload)
+      });
+      
       const rpcBody = await rpcRes.text();
-      console.log('[SaveResources] RPC response:', rpcRes.status, rpcBody.substring(0, 500));
-
-      if (!rpcRes.ok) {
-        // If RPC doesn't exist (404) or fails, fallback to direct PATCH+POST
-        console.warn('[SaveResources] RPC failed, falling back to direct REST. Status:', rpcRes.status);
-        
-        // Fallback: Try PATCH first
-        const ctrlFB = new AbortController();
-        const tFB = setTimeout(() => ctrlFB.abort(), 15000);
-        const fbRes = await fetch(
-          `${supabaseUrl}/rest/v1/topic_resources?topic_id=eq.${topicId}`,
-          {
-            method: 'PATCH',
-            headers: { ...headers, 'Prefer': 'return=representation' },
-            body: JSON.stringify(payload),
-            signal: ctrlFB.signal,
-          }
-        );
-        clearTimeout(tFB);
-        const fbBody = await fbRes.text();
-        console.log('[SaveResources] Fallback PATCH:', fbRes.status, fbBody.substring(0, 300));
-        
-        let fbParsed: any = null;
-        try { fbParsed = JSON.parse(fbBody); } catch {}
-        
-        if (fbRes.ok && Array.isArray(fbParsed) && fbParsed.length > 0) {
-          savedResource = fbParsed[0];
-        } else {
-          // POST if no row exists
-          const ctrlFB2 = new AbortController();
-          const tFB2 = setTimeout(() => ctrlFB2.abort(), 15000);
-          const fbRes2 = await fetch(
-            `${supabaseUrl}/rest/v1/topic_resources`,
-            {
-              method: 'POST',
-              headers: { ...headers, 'Prefer': 'return=representation' },
-              body: JSON.stringify(payload),
-              signal: ctrlFB2.signal,
-            }
-          );
-          clearTimeout(tFB2);
-          const fbBody2 = await fbRes2.text();
-          console.log('[SaveResources] Fallback POST:', fbRes2.status, fbBody2.substring(0, 300));
-          
-          if (!fbRes2.ok) {
-            throw new Error(`Error al guardar: ${fbBody2}`);
-          }
-          try {
-            const p2 = JSON.parse(fbBody2);
-            savedResource = Array.isArray(p2) ? p2[0] : p2;
-          } catch {}
-        }
-      } else {
-        try {
-          const parsed = JSON.parse(rpcBody);
-          savedResource = parsed;
-          console.log('[SaveResources] RPC success, slides_url in result:', savedResource?.slides_url);
-        } catch {
-          console.warn('[SaveResources] Could not parse RPC response');
-        }
-      }
-
-      console.log('[SaveResources] Saved resource id:', savedResource?.id);
+      let savedResource: any = null;
+      try { savedResource = JSON.parse(rpcBody); } catch {}
 
       if (savedResource) {
-        setUnits(units.map(u => ({
-          ...u,
-          topics: u.topics?.map(t =>
-            t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t
-          )
-        })));
+        setUnits(units.map(u => ({ ...u, topics: u.topics?.map(t => t.id === topicId ? { ...t, resources: savedResource as TopicResources } : t) })));
       }
 
-      // === UPSERT QUIZ INTO EVALUATIONS TABLE ===
-      // Students read quiz from evaluations table, not additional_resources
+      // 🔥 CORRECCIÓN: Guardar Quiz en Evaluaciones (Se eliminaron total_points y created_by que causaban el fallo)
       if (data.quiz && data.quiz.length > 0) {
         try {
           const evalPayload: any = {
@@ -1147,61 +577,30 @@ export default function EditCoursePage() {
             topic_id: topicId,
             title: `Quiz: ${editingResources?.topic.title || 'Tema'}`,
             questions: data.quiz,
-            total_points: data.quiz.reduce((sum: number, q: any) => sum + (q.points || 1), 0),
             passing_score: 70,
             max_attempts: 3,
             is_published: data.is_published ?? false,
           };
-          if (userId) evalPayload.created_by = userId;
 
-          // Check if evaluation exists, then PATCH or POST
-          const evalCtrl1 = new AbortController();
-          const evalT1 = setTimeout(() => evalCtrl1.abort(), 10000);
-          const evalCheckResp = await fetch(
-            `${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=id`,
-            { headers, signal: evalCtrl1.signal }
-          );
-          clearTimeout(evalT1);
+          const evalCheckResp = await fetch(`${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz&select=id`, { headers });
           const existingEvals = await evalCheckResp.json();
 
-          const evalCtrl2 = new AbortController();
-          const evalT2 = setTimeout(() => evalCtrl2.abort(), 15000);
-
           if (Array.isArray(existingEvals) && existingEvals.length > 0) {
-            console.log('[SaveResources] Updating evaluation:', existingEvals[0].id);
-            await fetch(
-              `${supabaseUrl}/rest/v1/evaluations?id=eq.${existingEvals[0].id}`,
-              { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload), signal: evalCtrl2.signal }
-            );
+            await fetch(`${supabaseUrl}/rest/v1/evaluations?id=eq.${existingEvals[0].id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload) });
           } else {
-            console.log('[SaveResources] Creating new evaluation for quiz');
-            await fetch(
-              `${supabaseUrl}/rest/v1/evaluations`,
-              { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload), signal: evalCtrl2.signal }
-            );
+            await fetch(`${supabaseUrl}/rest/v1/evaluations`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(evalPayload) });
           }
-          clearTimeout(evalT2);
-          console.log('[SaveResources] Quiz saved to evaluations table');
         } catch (evalErr: any) {
-          console.warn('[SaveResources] Failed to save quiz to evaluations:', evalErr);
+          console.warn('[SaveResources] No se pudo guardar el quiz:', evalErr);
         }
       } else {
-        // If quiz was removed, delete evaluation record
         try {
-          const delCtrl = new AbortController();
-          const delT = setTimeout(() => delCtrl.abort(), 10000);
-          await fetch(
-            `${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz`,
-            { method: 'DELETE', headers: { ...headers, 'Prefer': 'return=minimal' }, signal: delCtrl.signal }
-          );
-          clearTimeout(delT);
-        } catch { /* non-critical */ }
+          await fetch(`${supabaseUrl}/rest/v1/evaluations?topic_id=eq.${topicId}&scope=eq.topic_quiz`, { method: 'DELETE', headers: { ...headers, 'Prefer': 'return=minimal' } });
+        } catch {}
       }
 
       setEditingResources(null);
-      console.log('[SaveResources] Done!');
     } catch (err: any) {
-      console.error('[SaveResources] Error:', err);
       alert('Error al guardar recursos: ' + (err?.message || 'Error desconocido'));
     }
   };
@@ -1212,98 +611,41 @@ export default function EditCoursePage() {
     setExpandedUnits(n);
   };
 
-  // NUEVO: Abrir editor de evaluación de unidad
   const handleOpenAssessment = (unit: CourseUnit) => {
     setEditingAssessment({
       unit,
       assessment: unit.assessment || {
-        unit_id: unit.id,
-        course_id: courseId,
-        title: `Evaluación: ${unit.title}`,
-        description: '',
-        type: 'quiz',
-        time_limit_minutes: 30,
-        passing_score: 70,
-        max_attempts: 3,
-        is_published: false,
-        file_url: null,
-        file_type: null,
-        questions: []
+        unit_id: unit.id, course_id: courseId, title: `Evaluación: ${unit.title}`, description: '',
+        type: 'quiz', time_limit_minutes: 30, passing_score: 70, max_attempts: 3, is_published: false,
+        file_url: null, file_type: null, questions: []
       }
     });
   };
 
-  // NUEVO: Guardar evaluación de unidad
   const handleSaveAssessment = async (assessmentData: Partial<UnitAssessment>) => {
     if (!editingAssessment) return;
-    
     const { unit } = editingAssessment;
-    
     const payload = {
-      unit_id: unit.id,
-      course_id: courseId,
-      title: assessmentData.title || `Evaluación: ${unit.title}`,
-      description: assessmentData.description || '',
-      type: assessmentData.type || 'quiz',
-      time_limit_minutes: assessmentData.time_limit_minutes || null,
-      passing_score: assessmentData.passing_score || 70,
-      max_attempts: assessmentData.max_attempts || 3,
-      is_published: assessmentData.is_published || false,
-      file_url: assessmentData.file_url || null,
-      file_type: assessmentData.file_type || null,
-      questions: JSON.stringify(assessmentData.questions || [])
+      unit_id: unit.id, course_id: courseId, title: assessmentData.title || `Evaluación: ${unit.title}`, description: assessmentData.description || '',
+      type: assessmentData.type || 'quiz', time_limit_minutes: assessmentData.time_limit_minutes || null, passing_score: assessmentData.passing_score || 70,
+      max_attempts: assessmentData.max_attempts || 3, is_published: assessmentData.is_published || false, file_url: assessmentData.file_url || null,
+      file_type: assessmentData.file_type || null, questions: JSON.stringify(assessmentData.questions || [])
     };
 
     let savedData: any = null;
     try {
-      const { url, headers } = await getSupabaseHeaders();
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      
+      const { url, headers } = await getSupabaseHeadersExtended();
       if (unit.assessment?.id) {
-        console.log('[SaveAssessment] Updating assessment:', unit.assessment.id);
-        const res = await fetch(`${url}/rest/v1/unit_assessments?id=eq.${unit.assessment.id}`, {
-          method: 'PATCH', headers, signal: ctrl.signal,
-          body: JSON.stringify(payload)
-        });
-        clearTimeout(t);
-        if (res.ok) {
-          const arr = await res.json();
-          savedData = arr?.[0] || arr;
-        } else {
-          const body = await res.text();
-          alert('Error al guardar evaluación: ' + body);
-          return;
-        }
+        const res = await fetch(`${url}/rest/v1/unit_assessments?id=eq.${unit.assessment.id}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+        if (res.ok) savedData = (await res.json())?.[0];
       } else {
-        console.log('[SaveAssessment] Creating new assessment');
-        const res = await fetch(`${url}/rest/v1/unit_assessments`, {
-          method: 'POST', headers, signal: ctrl.signal,
-          body: JSON.stringify(payload)
-        });
-        clearTimeout(t);
-        if (res.ok) {
-          const arr = await res.json();
-          savedData = arr?.[0] || arr;
-        } else {
-          const body = await res.text();
-          alert('Error al guardar evaluación: ' + body);
-          return;
-        }
+        const res = await fetch(`${url}/rest/v1/unit_assessments`, { method: 'POST', headers, body: JSON.stringify(payload) });
+        if (res.ok) savedData = (await res.json())?.[0];
       }
-    } catch (err: any) {
-      console.error('[SaveAssessment] Error:', err);
-      alert('Error al guardar: ' + err.message);
-      return;
-    }
+    } catch (err: any) {}
 
     if (savedData) {
-      const savedAssessment = {
-        ...savedData,
-        questions: assessmentData.questions || []
-      } as UnitAssessment;
-      
-      setUnits(units.map(u => u.id === unit.id ? { ...u, assessment: savedAssessment } : u));
+      setUnits(units.map(u => u.id === unit.id ? { ...u, assessment: { ...savedData, questions: assessmentData.questions || [] } as UnitAssessment } : u));
       setEditingAssessment(null);
     }
   };
@@ -1469,7 +811,6 @@ export default function EditCoursePage() {
             <div className="space-y-4">
               {units.map((unit, ui) => (
                 <div key={unit.id} className="bg-[#0a0f1a] border border-gray-800 rounded-2xl overflow-hidden">
-                  {/* Unit Header */}
                   <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-800/30" onClick={() => toggleUnit(unit.id)}>
                     <GripVertical className="w-5 h-5 text-gray-500" />
                     <div className="w-8 h-8 bg-cyan-500/10 rounded-lg flex items-center justify-center text-cyan-400 font-bold text-sm">{ui + 1}</div>
@@ -1488,11 +829,7 @@ export default function EditCoursePage() {
                       <p className="text-xs text-gray-500 mt-0.5">{unit.topics?.length || 0} temas · {unit.estimated_hours || 0}h</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleOpenAssessment(unit); }} 
-                        className={`p-2 rounded-lg ${unit.assessment ? 'text-purple-400 hover:bg-purple-500/10' : 'text-gray-400 hover:text-purple-400 hover:bg-purple-500/10'}`}
-                        title="Evaluación de unidad"
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); handleOpenAssessment(unit); }} className={`p-2 rounded-lg ${unit.assessment ? 'text-purple-400 hover:bg-purple-500/10' : 'text-gray-400 hover:text-purple-400 hover:bg-purple-500/10'}`} title="Evaluación de unidad">
                         <ClipboardList className="w-4 h-4" />
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); setEditingUnit(unit); }} className="p-2 text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg">
@@ -1505,7 +842,6 @@ export default function EditCoursePage() {
                     </div>
                   </div>
 
-                  {/* Topics (expanded) */}
                   {expandedUnits.has(unit.id) && (
                     <div className="border-t border-gray-800 p-4 bg-[#030712]/50">
                       <div className="space-y-2">
@@ -1518,19 +854,8 @@ export default function EditCoursePage() {
                                   <span className="text-white text-sm truncate">{topic.title}</span>
                                   {topic.resources && (
                                     <div className="flex items-center gap-1">
-                                      {topic.resources.video_url && (() => {
-                                        let extraCount = 0;
-                                        try {
-                                          const ar = topic.resources!.additional_resources;
-                                          const parsed = ar ? (typeof ar === 'string' ? JSON.parse(ar) : ar) : {};
-                                          extraCount = (parsed.videos || []).length;
-                                        } catch { /* ignore */ }
-                                        return <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded text-xs">
-                                          {extraCount > 0 ? `${1 + extraCount} Videos` : 'Video'}
-                                        </span>;
-                                      })()}
+                                      {topic.resources.video_url && <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded text-xs">Video</span>}
                                       {topic.resources.pdf_url && <span className="bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded text-xs">PDF</span>}
-                                      {topic.resources.slides_url && <span className="bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded text-xs">Slides</span>}
                                     </div>
                                   )}
                                 </div>
@@ -1539,59 +864,40 @@ export default function EditCoursePage() {
                               <div className="flex items-center gap-1">
                                 <button 
                                   onClick={async () => {
-                                    // Fetch quiz from evaluations table (single source of truth for students)
                                     let quizFromEval: any[] = [];
                                     try {
-                                      const { url: sUrl, headers: sHeaders } = await getSupabaseHeaders();
-                                      const qCtrl = new AbortController();
-                                      const qT = setTimeout(() => qCtrl.abort(), 10000);
-                                      const qResp = await fetch(`${sUrl}/rest/v1/evaluations?topic_id=eq.${topic.id}&scope=eq.topic_quiz&select=questions`, { headers: sHeaders, signal: qCtrl.signal });
-                                      clearTimeout(qT);
+                                      const { url: sUrl, headers: sHeaders } = await getSupabaseHeadersExtended();
+                                      const qResp = await fetch(`${sUrl}/rest/v1/evaluations?topic_id=eq.${topic.id}&scope=eq.topic_quiz&select=questions`, { headers: sHeaders });
                                       if (qResp.ok) {
                                         const evals = await qResp.json();
                                         quizFromEval = Array.isArray(evals?.[0]?.questions) ? evals[0].questions : [];
                                       }
-                                    } catch (e) { console.warn('[OpenResources] Failed to fetch quiz from evaluations:', e); }
+                                    } catch (e) {}
                                     setEditingResources({ topic, resources: topic.resources || { introduction: '', introduction_format: 'markdown', video_url: '', video_provider: 'youtube', pdf_url: '', pdf_title: '', slides_url: '', slides_provider: 'google_slides', is_published: false }, quizFromEval });
                                   }} 
                                   className="px-3 py-1.5 text-xs bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg">
                                   Recursos
                                 </button>
-                                <button onClick={() => setEditingTopic(topic)} className="p-1.5 text-gray-400 hover:text-white rounded-lg">
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button onClick={() => handleDeleteTopic(topic.id, unit.id)} className="p-1.5 text-gray-400 hover:text-red-400 rounded-lg">
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <button onClick={() => setEditingTopic(topic)} className="p-1.5 text-gray-400 hover:text-white rounded-lg"><Edit2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => handleDeleteTopic(topic.id, unit.id)} className="p-1.5 text-gray-400 hover:text-red-400 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
 
-                      {/* Add Topic - Botones */}
                       <div className="flex gap-2 mt-3">
-                        <button 
-                          onClick={() => handleStartCreateTopicWithResources(unit.id)} 
-                          className="flex-1 py-3 border border-dashed border-cyan-500/50 text-cyan-400 rounded-xl hover:bg-cyan-500/10 text-sm flex items-center justify-center gap-2 transition-colors">
-                          <Plus className="w-4 h-4" />
-                          Agregar tema con recursos
+                        <button onClick={() => handleStartCreateTopicWithResources(unit.id)} className="flex-1 py-3 border border-dashed border-cyan-500/50 text-cyan-400 rounded-xl hover:bg-cyan-500/10 text-sm flex items-center justify-center gap-2 transition-colors">
+                          <Plus className="w-4 h-4" /> Agregar tema con recursos
                         </button>
-                        <button 
-                          onClick={() => setAddingTopicToUnit(unit.id)} 
-                          className="px-4 py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-gray-600 text-sm flex items-center gap-2">
-                          <Plus className="w-4 h-4" />
-                          Solo título
+                        <button onClick={() => setAddingTopicToUnit(unit.id)} className="px-4 py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-gray-600 text-sm flex items-center gap-2">
+                          <Plus className="w-4 h-4" /> Solo título
                         </button>
                       </div>
                       
-                      {/* Input rápido para agregar solo título */}
                       {addingTopicToUnit === unit.id && (
                         <div className="flex gap-2 mt-3">
-                          <input type="text" value={newTopicTitle} onChange={e => setNewTopicTitle(e.target.value)} 
-                            placeholder="Título del tema..." 
-                            className="flex-1 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" 
-                            autoFocus onKeyPress={e => e.key === 'Enter' && handleAddTopic(unit.id)} />
+                          <input type="text" value={newTopicTitle} onChange={e => setNewTopicTitle(e.target.value)} placeholder="Título del tema..." className="flex-1 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" autoFocus onKeyPress={e => e.key === 'Enter' && handleAddTopic(unit.id)} />
                           <button onClick={() => handleAddTopic(unit.id)} className="px-3 py-2 bg-cyan-500 text-black rounded-lg text-sm font-medium">Agregar</button>
                           <button onClick={() => { setAddingTopicToUnit(null); setNewTopicTitle(''); }} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-sm">Cancelar</button>
                         </div>
@@ -1602,13 +908,9 @@ export default function EditCoursePage() {
               ))}
             </div>
 
-            {/* Add Unit */}
             <div className="bg-[#0a0f1a] border border-gray-800 rounded-2xl p-4">
               <div className="flex gap-3">
-                <input type="text" value={newUnitTitle} onChange={e => setNewUnitTitle(e.target.value)} 
-                  placeholder="Nueva unidad..." 
-                  className="flex-1 bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" 
-                  onKeyPress={e => e.key === 'Enter' && handleAddUnit()} />
+                <input type="text" value={newUnitTitle} onChange={e => setNewUnitTitle(e.target.value)} placeholder="Nueva unidad..." className="flex-1 bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" onKeyPress={e => e.key === 'Enter' && handleAddUnit()} />
                 <button onClick={handleAddUnit} className="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-black font-medium rounded-xl flex items-center gap-2">
                   <Plus className="w-4 h-4" />Crear Unidad
                 </button>
@@ -1626,20 +928,17 @@ export default function EditCoursePage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-gray-400 mb-2">Máximo estudiantes</label>
-                    <input type="number" value={courseData.max_students} onChange={e => setCourseData({ ...courseData, max_students: parseInt(e.target.value) || 30 })} 
-                      className="w-full bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" />
+                    <input type="number" value={courseData.max_students} onChange={e => setCourseData({ ...courseData, max_students: parseInt(e.target.value) || 30 })} className="w-full bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-gray-400 mb-2">Fecha inicio</label>
-                    <input type="date" value={courseData.start_date?.split('T')[0] || ''} onChange={e => setCourseData({ ...courseData, start_date: e.target.value })} 
-                      className="w-full bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" />
+                    <input type="date" value={courseData.start_date?.split('T')[0] || ''} onChange={e => setCourseData({ ...courseData, start_date: e.target.value })} className="w-full bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-400 mb-2">Fecha fin</label>
-                    <input type="date" value={courseData.end_date?.split('T')[0] || ''} onChange={e => setCourseData({ ...courseData, end_date: e.target.value })} 
-                      className="w-full bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" />
+                    <input type="date" value={courseData.end_date?.split('T')[0] || ''} onChange={e => setCourseData({ ...courseData, end_date: e.target.value })} className="w-full bg-[#030712] border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" />
                   </div>
                 </div>
               </div>
@@ -1670,18 +969,15 @@ export default function EditCoursePage() {
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Título</label>
-                <input type="text" value={editingUnit.title} onChange={e => setEditingUnit({ ...editingUnit, title: e.target.value })} 
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
+                <input type="text" value={editingUnit.title} onChange={e => setEditingUnit({ ...editingUnit, title: e.target.value })} className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Descripción</label>
-                <textarea value={editingUnit.description || ''} onChange={e => setEditingUnit({ ...editingUnit, description: e.target.value })} rows={3} 
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none resize-none" />
+                <textarea value={editingUnit.description || ''} onChange={e => setEditingUnit({ ...editingUnit, description: e.target.value })} rows={3} className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none resize-none" />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Horas estimadas</label>
-                <input type="number" step="0.5" value={editingUnit.estimated_hours || 0} onChange={e => setEditingUnit({ ...editingUnit, estimated_hours: parseFloat(e.target.value) || 0 })} 
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
+                <input type="number" step="0.5" value={editingUnit.estimated_hours || 0} onChange={e => setEditingUnit({ ...editingUnit, estimated_hours: parseFloat(e.target.value) || 0 })} className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
               </div>
               <div className="flex items-center gap-3">
                 <input type="checkbox" id="unit-pub" checked={editingUnit.is_published} onChange={e => setEditingUnit({ ...editingUnit, is_published: e.target.checked })} className="w-4 h-4 accent-cyan-500" />
@@ -1707,13 +1003,11 @@ export default function EditCoursePage() {
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Título</label>
-                <input type="text" value={editingTopic.title} onChange={e => setEditingTopic({ ...editingTopic, title: e.target.value })} 
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
+                <input type="text" value={editingTopic.title} onChange={e => setEditingTopic({ ...editingTopic, title: e.target.value })} className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Duración (min)</label>
-                <input type="number" value={editingTopic.estimated_minutes || 30} onChange={e => setEditingTopic({ ...editingTopic, estimated_minutes: parseInt(e.target.value) || 30 })} 
-                  className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
+                <input type="number" value={editingTopic.estimated_minutes || 30} onChange={e => setEditingTopic({ ...editingTopic, estimated_minutes: parseInt(e.target.value) || 30 })} className="w-full bg-[#030712] border border-gray-800 rounded-lg p-3 text-white focus:border-cyan-500 focus:outline-none" />
               </div>
               <div className="flex items-center gap-3">
                 <input type="checkbox" id="topic-pub" checked={editingTopic.is_published} onChange={e => setEditingTopic({ ...editingTopic, is_published: e.target.checked })} className="w-4 h-4 accent-cyan-500" />
@@ -1722,21 +1016,15 @@ export default function EditCoursePage() {
             </div>
             <div className="flex gap-3 p-5 border-t border-gray-800">
               <button onClick={() => setEditingTopic(null)} className="flex-1 bg-gray-800 text-white py-2.5 rounded-lg font-medium">Cancelar</button>
-              <button 
-                onClick={() => handleUpdateTopic(editingTopic)} 
-                disabled={savingTopic}
-                className="flex-1 bg-cyan-500 text-black py-2.5 rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {savingTopic ? (
-                  <><div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> Guardando...</>
-                ) : 'Guardar'}
+              <button onClick={() => handleUpdateTopic(editingTopic)} disabled={savingTopic} className="flex-1 bg-cyan-500 text-black py-2.5 rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                {savingTopic ? <><div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> Guardando...</> : 'Guardar'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal: Edit Resources - Nuevo Editor Rico */}
+      {/* Modal: Edit Resources */}
       {editingResources && (
         <TopicResourceEditor
           topicId={editingResources.topic.id}
@@ -1744,32 +1032,22 @@ export default function EditCoursePage() {
           unitId={editingResources.topic.unit_id}
           courseId={courseId}
           initialData={(() => {
-            // Parse additional_resources (can be string or object from JSONB)
             let extras: { videos?: any[]; quiz?: any[] } = {};
             try {
               const raw = editingResources.resources.additional_resources;
-              if (raw) {
-                extras = typeof raw === 'string' ? JSON.parse(raw) : raw;
-              }
-            } catch { /* ignore parse errors */ }
+              if (raw) extras = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            } catch {}
 
-            // Build main video
             const mainVideos = editingResources.resources.video_url ? [{
-              id: 'main',
-              url: editingResources.resources.video_url,
-              title: 'Video principal',
+              id: 'main', url: editingResources.resources.video_url, title: 'Video principal',
               provider: (editingResources.resources.video_provider as 'youtube' | 'vimeo' | 'unknown') || 'youtube',
               embedUrl: getVideoInfo(editingResources.resources.video_url || '').embedUrl,
               duration_seconds: editingResources.resources.video_duration_seconds
             }] : [];
 
-            // Restore additional videos from additional_resources
             const extraVideos = (extras.videos || []).map((v: any, i: number) => ({
-              id: v.id || `extra_${i}`,
-              url: v.url || '',
-              title: v.title || `Video ${mainVideos.length + i + 1}`,
-              provider: (v.provider as 'youtube' | 'vimeo' | 'unknown') || 'youtube',
-              embedUrl: v.url ? getVideoInfo(v.url).embedUrl : null,
+              id: v.id || `extra_${i}`, url: v.url || '', title: v.title || `Video ${mainVideos.length + i + 1}`,
+              provider: (v.provider as 'youtube' | 'vimeo' | 'unknown') || 'youtube', embedUrl: v.url ? getVideoInfo(v.url).embedUrl : null,
               duration_seconds: v.duration_seconds || 0
             }));
 
@@ -1778,17 +1056,8 @@ export default function EditCoursePage() {
               introduction_format: (editingResources.resources.introduction_format as 'markdown' | 'html' | 'plain') || 'markdown',
               videos: [...mainVideos, ...extraVideos],
               documents: [
-                editingResources.resources.pdf_url ? {
-                  type: 'pdf' as const,
-                  url: editingResources.resources.pdf_url,
-                  title: editingResources.resources.pdf_title || ''
-                } : null,
-                editingResources.resources.slides_url ? {
-                  type: 'slides' as const,
-                  url: editingResources.resources.slides_url,
-                  title: '',
-                  provider: (editingResources.resources.slides_provider as 'google_slides' | 'canva' | 'pdf' | 'custom') || 'google_slides'
-                } : null
+                editingResources.resources.pdf_url ? { type: 'pdf' as const, url: editingResources.resources.pdf_url, title: editingResources.resources.pdf_title || '' } : null,
+                editingResources.resources.slides_url ? { type: 'slides' as const, url: editingResources.resources.slides_url, title: '', provider: (editingResources.resources.slides_provider as 'google_slides' | 'canva' | 'pdf' | 'custom') || 'google_slides' } : null
               ].filter(Boolean) as any[],
               quiz: (editingResources.quizFromEval && editingResources.quizFromEval.length > 0) ? editingResources.quizFromEval : (extras.quiz || []),
               is_published: editingResources.resources.is_published || false
@@ -1799,28 +1068,14 @@ export default function EditCoursePage() {
         />
       )}
 
-      {/* NUEVO: Modal para crear tema con recursos completos */}
+      {/* Modal para crear tema con recursos completos */}
       {creatingTopicWithResources && newTopicData && (
-        <CreateTopicWithResourcesModal
-          data={newTopicData}
-          onChange={setNewTopicData}
-          onSave={handleCreateTopicWithResources}
-          onClose={() => {
-            setCreatingTopicWithResources(null);
-            setNewTopicData(null);
-          }}
-        />
+        <CreateTopicWithResourcesModal data={newTopicData} onChange={setNewTopicData} onSave={handleCreateTopicWithResources} onClose={() => { setCreatingTopicWithResources(null); setNewTopicData(null); }} />
       )}
 
       {/* Modal: Evaluación de Unidad */}
       {editingAssessment && (
-        <UnitAssessmentEditorModal
-          unit={editingAssessment.unit}
-          existingAssessment={(editingAssessment.assessment as UnitAssessment) || null}
-          courseId={courseId}
-          onSave={handleSaveAssessment}
-          onClose={() => setEditingAssessment(null)}
-        />
+        <UnitAssessmentEditorModal unit={editingAssessment.unit} existingAssessment={(editingAssessment.assessment as UnitAssessment) || null} courseId={courseId} onSave={handleSaveAssessment} onClose={() => setEditingAssessment(null)} />
       )}
     </div>
   );
@@ -1828,17 +1083,10 @@ export default function EditCoursePage() {
 
 // Unit Assessment Editor Modal
 function UnitAssessmentEditorModal({
-  unit,
-  existingAssessment,
-  courseId,
-  onSave,
-  onClose
+  unit, existingAssessment, courseId, onSave, onClose
 }: {
-  unit: CourseUnit;
-  existingAssessment: UnitAssessment | null;
-  courseId: string;
-  onSave: (assessment: Partial<UnitAssessment>) => Promise<void>;
-  onClose: () => void;
+  unit: CourseUnit; existingAssessment: UnitAssessment | null; courseId: string;
+  onSave: (assessment: Partial<UnitAssessment>) => Promise<void>; onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'settings' | 'upload' | 'create'>('settings');
   const [saving, setSaving] = useState(false);
@@ -1846,493 +1094,138 @@ function UnitAssessmentEditorModal({
   const supabase = createClient();
   
   const [data, setData] = useState<{
-    title: string;
-    description: string;
-    type: 'quiz' | 'file_upload' | 'mixed';
-    time_limit_minutes: number | null;
-    passing_score: number;
-    max_attempts: number;
-    is_published: boolean;
-    file_url: string | null;
-    file_type: string | null;
-    questions: AssessmentQuestion[];
+    title: string; description: string; type: 'quiz' | 'file_upload' | 'mixed';
+    time_limit_minutes: number | null; passing_score: number; max_attempts: number;
+    is_published: boolean; file_url: string | null; file_type: string | null; questions: AssessmentQuestion[];
   }>({
-    title: existingAssessment?.title || `Evaluación: ${unit.title}`,
-    description: existingAssessment?.description || '',
-    type: existingAssessment?.type || 'quiz',
-    time_limit_minutes: existingAssessment?.time_limit_minutes || 30,
-    passing_score: existingAssessment?.passing_score || 70,
-    max_attempts: existingAssessment?.max_attempts || 3,
-    is_published: existingAssessment?.is_published || false,
-    file_url: existingAssessment?.file_url || null,
-    file_type: existingAssessment?.file_type || null,
-    questions: existingAssessment?.questions || []
+    title: existingAssessment?.title || `Evaluación: ${unit.title}`, description: existingAssessment?.description || '',
+    type: existingAssessment?.type || 'quiz', time_limit_minutes: existingAssessment?.time_limit_minutes || 30,
+    passing_score: existingAssessment?.passing_score || 70, max_attempts: existingAssessment?.max_attempts || 3,
+    is_published: existingAssessment?.is_published || false, file_url: existingAssessment?.file_url || null,
+    file_type: existingAssessment?.file_type || null, questions: existingAssessment?.questions || []
   });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (!allowedTypes.includes(file.type)) {
-      alert('Solo se permiten archivos PDF o Word');
-      return;
-    }
+    if (!allowedTypes.includes(file.type)) { alert('Solo se permiten archivos PDF o Word'); return; }
 
     setUploading(true);
     try {
       const fileName = `${courseId}/assessments/${unit.id}/${Date.now()}_${file.name}`;
-      const { data: uploadData, error } = await supabase.storage
-        .from('Courses')
-        .upload(fileName, file, { upsert: true });
-
+      const { data: uploadData, error } = await supabase.storage.from('Courses').upload(fileName, file, { upsert: true });
       if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('Courses').getPublicUrl(fileName);
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('Courses')
-        .getPublicUrl(fileName);
-
-      setData(prev => ({
-        ...prev,
-        file_url: publicUrl,
-        file_type: file.type,
-        type: prev.questions.length > 0 ? 'mixed' : 'file_upload'
-      }));
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      alert('Error al subir el archivo');
-    } finally {
-      setUploading(false);
-    }
+      setData(prev => ({ ...prev, file_url: publicUrl, file_type: file.type, type: prev.questions.length > 0 ? 'mixed' : 'file_upload' }));
+    } catch (error) { alert('Error al subir el archivo'); } finally { setUploading(false); }
   };
 
   const addQuestion = () => {
-    const newQuestion: AssessmentQuestion = {
-      id: Date.now().toString(),
-      text: '',
-      type: 'multiple_choice',
-      options: ['', '', '', ''],
-      correctAnswer: 0,
-      points: 10,
-      explanation: ''
-    };
-    setData(prev => ({
-      ...prev,
-      questions: [...prev.questions, newQuestion],
-      type: prev.file_url ? 'mixed' : 'quiz'
-    }));
+    const newQuestion: AssessmentQuestion = { id: Date.now().toString(), text: '', type: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0, points: 10, explanation: '' };
+    setData(prev => ({ ...prev, questions: [...prev.questions, newQuestion], type: prev.file_url ? 'mixed' : 'quiz' }));
   };
 
   const updateQuestion = (id: string, updates: Partial<AssessmentQuestion>) => {
-    setData(prev => ({
-      ...prev,
-      questions: prev.questions.map(q => q.id === id ? { ...q, ...updates } : q)
-    }));
+    setData(prev => ({ ...prev, questions: prev.questions.map(q => q.id === id ? { ...q, ...updates } : q) }));
   };
 
   const removeQuestion = (id: string) => {
-    setData(prev => ({
-      ...prev,
-      questions: prev.questions.filter(q => q.id !== id),
-      type: prev.questions.length <= 1 && prev.file_url ? 'file_upload' : prev.type
-    }));
+    setData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id), type: prev.questions.length <= 1 && prev.file_url ? 'file_upload' : prev.type }));
   };
 
   const handleSave = async () => {
-    if (!data.title.trim()) {
-      alert('El título es requerido');
-      return;
-    }
-    if (data.type === 'quiz' && data.questions.length === 0) {
-      alert('Debe agregar al menos una pregunta');
-      return;
-    }
+    if (!data.title.trim()) { alert('El título es requerido'); return; }
+    if (data.type === 'quiz' && data.questions.length === 0) { alert('Debe agregar al menos una pregunta'); return; }
 
     setSaving(true);
-    try {
-      await onSave({
-        unit_id: unit.id,
-        course_id: courseId,
-        ...data
-      });
-      onClose();
-    } catch (error) {
-      console.error('Error saving assessment:', error);
-      alert('Error al guardar la evaluación');
-    } finally {
-      setSaving(false);
-    }
+    try { await onSave({ unit_id: unit.id, course_id: courseId, ...data }); onClose(); } catch (error) { alert('Error al guardar la evaluación'); } finally { setSaving(false); }
   };
 
   const totalPoints = data.questions.reduce((sum, q) => sum + q.points, 0);
 
-  const tabs = [
-    { id: 'settings' as const, label: 'Configuración', icon: Settings2 },
-    { id: 'upload' as const, label: 'Subir archivo', icon: FileUp },
-    { id: 'create' as const, label: 'Crear preguntas', icon: PenTool }
-  ];
+  const tabs = [{ id: 'settings' as const, label: 'Configuración', icon: Settings2 }, { id: 'upload' as const, label: 'Subir archivo', icon: FileUp }, { id: 'create' as const, label: 'Crear preguntas', icon: PenTool }];
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-[#030712] border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-800">
-          <div>
-            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-              <ClipboardList className="w-5 h-5 text-purple-400" />
-              Evaluación de Unidad
-            </h2>
-            <p className="text-sm text-gray-400 mt-1">Unidad: {unit.title}</p>
-          </div>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg">
-            <X className="w-5 h-5" />
-          </button>
+          <div><h2 className="text-xl font-semibold text-white flex items-center gap-2"><ClipboardList className="w-5 h-5 text-purple-400" />Evaluación de Unidad</h2><p className="text-sm text-gray-400 mt-1">Unidad: {unit.title}</p></div>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-gray-800 px-5">
           {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id 
-                  ? 'border-purple-400 text-purple-400' 
-                  : 'border-transparent text-gray-400 hover:text-white'
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? 'border-purple-400 text-purple-400' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              <tab.icon className="w-4 h-4" />{tab.label}
             </button>
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Título de la evaluación *</label>
-                <input
-                  type="text"
-                  value={data.title}
-                  onChange={(e) => setData(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors"
-                  placeholder="Ej: Evaluación Final - Módulo 1"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Descripción / Instrucciones</label>
-                <textarea
-                  value={data.description}
-                  onChange={(e) => setData(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors resize-none"
-                  placeholder="Instrucciones para los estudiantes..."
-                />
-              </div>
-
+              <div><label className="block text-sm font-medium text-gray-300 mb-2">Título de la evaluación *</label><input type="text" value={data.title} onChange={(e) => setData(prev => ({ ...prev, title: e.target.value }))} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors" placeholder="Ej: Evaluación Final - Módulo 1" /></div>
+              <div><label className="block text-sm font-medium text-gray-300 mb-2">Descripción / Instrucciones</label><textarea value={data.description} onChange={(e) => setData(prev => ({ ...prev, description: e.target.value }))} rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors resize-none" placeholder="Instrucciones para los estudiantes..." /></div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Tiempo límite (minutos)</label>
-                  <input
-                    type="number"
-                    value={data.time_limit_minutes || ''}
-                    onChange={(e) => setData(prev => ({ ...prev, time_limit_minutes: e.target.value ? parseInt(e.target.value) : null }))}
-                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors"
-                    placeholder="Sin límite"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Puntaje para aprobar (%)</label>
-                  <input
-                    type="number"
-                    value={data.passing_score}
-                    onChange={(e) => setData(prev => ({ ...prev, passing_score: parseInt(e.target.value) || 0 }))}
-                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Intentos máximos</label>
-                  <input
-                    type="number"
-                    value={data.max_attempts}
-                    onChange={(e) => setData(prev => ({ ...prev, max_attempts: parseInt(e.target.value) || 1 }))}
-                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors"
-                    min="1"
-                  />
-                </div>
+                <div><label className="block text-sm font-medium text-gray-300 mb-2">Tiempo límite (minutos)</label><input type="number" value={data.time_limit_minutes || ''} onChange={(e) => setData(prev => ({ ...prev, time_limit_minutes: e.target.value ? parseInt(e.target.value) : null }))} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors" placeholder="Sin límite" min="0" /></div>
+                <div><label className="block text-sm font-medium text-gray-300 mb-2">Puntaje para aprobar (%)</label><input type="number" value={data.passing_score} onChange={(e) => setData(prev => ({ ...prev, passing_score: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors" min="0" max="100" /></div>
+                <div><label className="block text-sm font-medium text-gray-300 mb-2">Intentos máximos</label><input type="number" value={data.max_attempts} onChange={(e) => setData(prev => ({ ...prev, max_attempts: parseInt(e.target.value) || 1 }))} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors" min="1" /></div>
               </div>
-
               <div className="flex items-center gap-3 p-4 bg-gray-900/50 rounded-lg border border-gray-800">
-                <input
-                  type="checkbox"
-                  id="is_published"
-                  checked={data.is_published}
-                  onChange={(e) => setData(prev => ({ ...prev, is_published: e.target.checked }))}
-                  className="w-5 h-5 rounded border-gray-600 text-purple-500 focus:ring-purple-500"
-                />
-                <label htmlFor="is_published" className="text-gray-300">
-                  <span className="font-medium">Publicar evaluación</span>
-                  <p className="text-sm text-gray-500">Los estudiantes podrán ver y realizar esta evaluación</p>
-                </label>
+                <input type="checkbox" id="is_published" checked={data.is_published} onChange={(e) => setData(prev => ({ ...prev, is_published: e.target.checked }))} className="w-5 h-5 rounded border-gray-600 text-purple-500 focus:ring-purple-500" />
+                <label htmlFor="is_published" className="text-gray-300"><span className="font-medium">Publicar evaluación</span><p className="text-sm text-gray-500">Los estudiantes podrán ver y realizar esta evaluación</p></label>
               </div>
             </div>
           )}
 
-          {/* Upload Tab */}
           {activeTab === 'upload' && (
             <div className="space-y-6">
               <div className="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center hover:border-purple-500/50 transition-colors">
                 {data.file_url ? (
                   <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-3"><FileText className="w-12 h-12 text-purple-400" /><div className="text-left"><p className="text-white font-medium">Archivo cargado</p><p className="text-sm text-gray-400">{data.file_type === 'application/pdf' ? 'Documento PDF' : 'Documento Word'}</p></div></div>
                     <div className="flex items-center justify-center gap-3">
-                      <FileText className="w-12 h-12 text-purple-400" />
-                      <div className="text-left">
-                        <p className="text-white font-medium">Archivo cargado</p>
-                        <p className="text-sm text-gray-400">{data.file_type === 'application/pdf' ? 'Documento PDF' : 'Documento Word'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-center gap-3">
-                      <a 
-                        href={data.file_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 transition-colors"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        Ver archivo
-                      </a>
-                      <button
-                        onClick={() => setData(prev => ({ ...prev, file_url: null, file_type: null, type: prev.questions.length > 0 ? 'quiz' : 'quiz' }))}
-                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg flex items-center gap-2 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Eliminar
-                      </button>
+                      <a href={data.file_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg flex items-center gap-2 transition-colors"><ExternalLink className="w-4 h-4" />Ver archivo</a>
+                      <button onClick={() => setData(prev => ({ ...prev, file_url: null, file_type: null, type: prev.questions.length > 0 ? 'quiz' : 'quiz' }))} className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg flex items-center gap-2 transition-colors"><Trash2 className="w-4 h-4" />Eliminar</button>
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <FileUp className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-                    <p className="text-gray-300 mb-2">Arrastra un archivo o haz clic para seleccionar</p>
-                    <p className="text-sm text-gray-500 mb-4">PDF o Word (máx. 10MB)</p>
-                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg cursor-pointer transition-colors">
-                      <Upload className="w-4 h-4" />
-                      Seleccionar archivo
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    {uploading && (
-                      <div className="flex items-center justify-center gap-2 mt-4 text-gray-400">
-                        <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-                        Subiendo...
-                      </div>
-                    )}
-                  </>
+                  <><FileUp className="w-12 h-12 text-gray-500 mx-auto mb-4" /><p className="text-gray-300 mb-2">Arrastra un archivo o haz clic para seleccionar</p><p className="text-sm text-gray-500 mb-4">PDF o Word (máx. 10MB)</p><label className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg cursor-pointer transition-colors"><Upload className="w-4 h-4" />Seleccionar archivo<input type="file" accept=".pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" /></label>{uploading && (<div className="flex items-center justify-center gap-2 mt-4 text-gray-400"><div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />Subiendo...</div>)}</>
                 )}
-              </div>
-
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                <p className="text-blue-400 text-sm">
-                  💡 <strong>Tip:</strong> Puedes subir un archivo de evaluación Y también crear preguntas adicionales. 
-                  Los estudiantes tendrán acceso a ambos.
-                </p>
               </div>
             </div>
           )}
 
-          {/* Create Questions Tab */}
           {activeTab === 'create' && (
             <div className="space-y-4">
-              {data.questions.length > 0 && (
-                <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                  <span className="text-purple-400 text-sm">
-                    {data.questions.length} pregunta(s) · {totalPoints} puntos totales
-                  </span>
-                </div>
-              )}
-
+              {data.questions.length > 0 && <div className="flex items-center justify-between p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg"><span className="text-purple-400 text-sm">{data.questions.length} pregunta(s) · {totalPoints} puntos totales</span></div>}
               {data.questions.map((question, qIndex) => (
                 <div key={question.id} className="bg-gray-900/50 border border-gray-800 rounded-xl p-5 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full text-sm font-medium">
-                      Pregunta {qIndex + 1}
-                    </span>
-                    <button
-                      onClick={() => removeQuestion(question.id)}
-                      className="p-1 text-gray-500 hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <textarea
-                    value={question.text}
-                    onChange={(e) => updateQuestion(question.id, { text: e.target.value })}
-                    placeholder="Escribe la pregunta..."
-                    rows={2}
-                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors resize-none"
-                  />
-
+                  <div className="flex items-start justify-between"><span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full text-sm font-medium">Pregunta {qIndex + 1}</span><button onClick={() => removeQuestion(question.id)} className="p-1 text-gray-500 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4" /></button></div>
+                  <textarea value={question.text} onChange={(e) => updateQuestion(question.id, { text: e.target.value })} placeholder="Escribe la pregunta..." rows={2} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-colors resize-none" />
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">Tipo de pregunta</label>
-                      <select
-                        value={question.type}
-                        onChange={(e) => updateQuestion(question.id, { 
-                          type: e.target.value as 'multiple_choice' | 'true_false' | 'short_answer',
-                          options: e.target.value === 'true_false' ? ['Verdadero', 'Falso'] : 
-                                   e.target.value === 'short_answer' ? [] : ['', '', '', ''],
-                          correctAnswer: e.target.value === 'short_answer' ? '' : 0
-                        })}
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400"
-                      >
-                        <option value="multiple_choice">Opción múltiple</option>
-                        <option value="true_false">Verdadero/Falso</option>
-                        <option value="short_answer">Respuesta corta</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">Puntos</label>
-                      <input
-                        type="number"
-                        value={question.points}
-                        onChange={(e) => updateQuestion(question.id, { points: parseInt(e.target.value) || 1 })}
-                        min="1"
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400"
-                      />
-                    </div>
+                    <div><label className="block text-xs text-gray-400 mb-1">Tipo de pregunta</label><select value={question.type} onChange={(e) => updateQuestion(question.id, { type: e.target.value as 'multiple_choice' | 'true_false' | 'short_answer', options: e.target.value === 'true_false' ? ['Verdadero', 'Falso'] : e.target.value === 'short_answer' ? [] : ['', '', '', ''], correctAnswer: e.target.value === 'short_answer' ? '' : 0 })} className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400"><option value="multiple_choice">Opción múltiple</option><option value="true_false">Verdadero/Falso</option><option value="short_answer">Respuesta corta</option></select></div>
+                    <div><label className="block text-xs text-gray-400 mb-1">Puntos</label><input type="number" value={question.points} onChange={(e) => updateQuestion(question.id, { points: parseInt(e.target.value) || 1 })} min="1" className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400" /></div>
                   </div>
-
-                  {question.type === 'multiple_choice' && (
-                    <div className="space-y-2">
-                      <label className="block text-xs text-gray-400">Opciones (marca la correcta)</label>
-                      {question.options.map((option, oIndex) => (
-                        <div key={oIndex} className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`correct-${question.id}`}
-                            checked={question.correctAnswer === oIndex}
-                            onChange={() => updateQuestion(question.id, { correctAnswer: oIndex })}
-                            className="w-4 h-4 text-purple-500 focus:ring-purple-500"
-                          />
-                          <input
-                            type="text"
-                            value={option}
-                            onChange={(e) => {
-                              const newOptions = [...question.options];
-                              newOptions[oIndex] = e.target.value;
-                              updateQuestion(question.id, { options: newOptions });
-                            }}
-                            placeholder={`Opción ${oIndex + 1}`}
-                            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {question.type === 'true_false' && (
-                    <div className="space-y-2">
-                      <label className="block text-xs text-gray-400">Respuesta correcta</label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`tf-${question.id}`}
-                            checked={question.correctAnswer === 0}
-                            onChange={() => updateQuestion(question.id, { correctAnswer: 0 })}
-                            className="w-4 h-4 text-purple-500 focus:ring-purple-500"
-                          />
-                          <span className="text-gray-300">Verdadero</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`tf-${question.id}`}
-                            checked={question.correctAnswer === 1}
-                            onChange={() => updateQuestion(question.id, { correctAnswer: 1 })}
-                            className="w-4 h-4 text-purple-500 focus:ring-purple-500"
-                          />
-                          <span className="text-gray-300">Falso</span>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-
-                  {question.type === 'short_answer' && (
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">Respuesta esperada</label>
-                      <input
-                        type="text"
-                        value={question.correctAnswer as string}
-                        onChange={(e) => updateQuestion(question.id, { correctAnswer: e.target.value })}
-                        placeholder="Respuesta correcta..."
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Explicación (opcional)</label>
-                    <input
-                      type="text"
-                      value={question.explanation || ''}
-                      onChange={(e) => updateQuestion(question.id, { explanation: e.target.value })}
-                      placeholder="Se muestra después de responder..."
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400"
-                    />
-                  </div>
+                  {question.type === 'multiple_choice' && (<div className="space-y-2"><label className="block text-xs text-gray-400">Opciones (marca la correcta)</label>{question.options.map((option, oIndex) => (<div key={oIndex} className="flex items-center gap-2"><input type="radio" name={`correct-${question.id}`} checked={question.correctAnswer === oIndex} onChange={() => updateQuestion(question.id, { correctAnswer: oIndex })} className="w-4 h-4 text-purple-500 focus:ring-purple-500" /><input type="text" value={option} onChange={(e) => { const newOptions = [...question.options]; newOptions[oIndex] = e.target.value; updateQuestion(question.id, { options: newOptions }); }} placeholder={`Opción ${oIndex + 1}`} className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400" /></div>))}</div>)}
+                  {question.type === 'true_false' && (<div className="space-y-2"><label className="block text-xs text-gray-400">Respuesta correcta</label><div className="flex gap-4"><label className="flex items-center gap-2"><input type="radio" name={`tf-${question.id}`} checked={question.correctAnswer === 0} onChange={() => updateQuestion(question.id, { correctAnswer: 0 })} className="w-4 h-4 text-purple-500 focus:ring-purple-500" /><span className="text-gray-300">Verdadero</span></label><label className="flex items-center gap-2"><input type="radio" name={`tf-${question.id}`} checked={question.correctAnswer === 1} onChange={() => updateQuestion(question.id, { correctAnswer: 1 })} className="w-4 h-4 text-purple-500 focus:ring-purple-500" /><span className="text-gray-300">Falso</span></label></div></div>)}
+                  {question.type === 'short_answer' && (<div><label className="block text-xs text-gray-400 mb-1">Respuesta esperada</label><input type="text" value={question.correctAnswer as string} onChange={(e) => updateQuestion(question.id, { correctAnswer: e.target.value })} placeholder="Respuesta correcta..." className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400" /></div>)}
+                  <div><label className="block text-xs text-gray-400 mb-1">Explicación (opcional)</label><input type="text" value={question.explanation || ''} onChange={(e) => updateQuestion(question.id, { explanation: e.target.value })} placeholder="Se muestra después de responder..." className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:border-purple-400" /></div>
                 </div>
               ))}
-
-              <button
-                onClick={addQuestion}
-                className="w-full py-4 border-2 border-dashed border-gray-700 rounded-xl text-gray-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Agregar pregunta
-              </button>
+              <button onClick={addQuestion} className="w-full py-4 border-2 border-dashed border-gray-700 rounded-xl text-gray-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Agregar pregunta</button>
             </div>
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between p-5 border-t border-gray-800 bg-[#0a0f1a] flex-shrink-0">
-          <div className="text-sm text-gray-400">
-            {data.file_url ? '📎 Archivo adjunto · ' : ''}
-            {data.questions.length} pregunta(s) · {totalPoints} pts
-          </div>
+          <div className="text-sm text-gray-400">{data.file_url ? '📎 Archivo adjunto · ' : ''}{data.questions.length} pregunta(s) · {totalPoints} pts</div>
           <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white transition-colors">
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || !data.title.trim()}
-              className="px-6 py-2 bg-purple-500 hover:bg-purple-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Guardar Evaluación
-                </>
-              )}
+            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white transition-colors">Cancelar</button>
+            <button onClick={handleSave} disabled={saving || !data.title.trim()} className="px-6 py-2 bg-purple-500 hover:bg-purple-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              {saving ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Guardando...</> : <><Save className="w-4 h-4" />Guardar Evaluación</>}
             </button>
           </div>
         </div>
@@ -2340,10 +1233,6 @@ function UnitAssessmentEditorModal({
     </div>
   );
 }
-
-// ============================================
-// COMPONENTE: Modal para crear tema con recursos
-// ============================================
 
 interface CreateTopicModalProps {
   data: NewTopicWithResources;
@@ -2356,457 +1245,102 @@ function CreateTopicWithResourcesModal({ data, onChange, onSave, onClose }: Crea
   const [activeSection, setActiveSection] = useState<'info' | 'videos' | 'docs' | 'quiz'>('info');
   const [saving, setSaving] = useState(false);
 
-  const handleSave = async () => {
-    setSaving(true);
-    await onSave();
-    setSaving(false);
-  };
-
-  const addVideo = () => {
-    onChange({
-      ...data,
-      videos: [...data.videos, { id: `vid_${Date.now()}`, url: '', title: '', provider: 'unknown', embedUrl: null }]
-    });
-  };
-
-  const updateVideo = (index: number, field: string, value: any) => {
-    const newVideos = [...data.videos];
-    newVideos[index] = { ...newVideos[index], [field]: value };
-    if (field === 'url') {
-      const info = getVideoInfo(value);
-      newVideos[index].provider = info.provider;
-      newVideos[index].embedUrl = info.embedUrl;
-    }
-    onChange({ ...data, videos: newVideos });
-  };
-
-  const removeVideo = (index: number) => {
-    onChange({ ...data, videos: data.videos.filter((_, i) => i !== index) });
-  };
-
-  const updateDocument = (type: 'pdf' | 'slides', field: string, value: string) => {
-    const existing = data.documents.find(d => d.type === type);
-    const updated = existing ? { ...existing, [field]: value } : { type, url: '', title: '', [field]: value };
-    onChange({ ...data, documents: [...data.documents.filter(d => d.type !== type), updated] });
-  };
-
-  const addQuizQuestion = () => {
-    onChange({
-      ...data,
-      quiz: [...data.quiz, {
-        id: `q_${Date.now()}`,
-        text: '',
-        type: 'multiple_choice',
-        options: ['', '', '', ''],
-        correctAnswer: 0,
-        points: 10
-      }]
-    });
-  };
-
-  const updateQuestion = (index: number, updates: Partial<typeof data.quiz[0]>) => {
-    const newQuiz = [...data.quiz];
-    newQuiz[index] = { ...newQuiz[index], ...updates };
-    onChange({ ...data, quiz: newQuiz });
-  };
-
-  const removeQuestion = (index: number) => {
-    onChange({ ...data, quiz: data.quiz.filter((_, i) => i !== index) });
-  };
+  const handleSave = async () => { setSaving(true); await onSave(); setSaving(false); };
+  const addVideo = () => { onChange({ ...data, videos: [...data.videos, { id: `vid_${Date.now()}`, url: '', title: '', provider: 'unknown', embedUrl: null }] }); };
+  const updateVideo = (index: number, field: string, value: any) => { const newVideos = [...data.videos]; newVideos[index] = { ...newVideos[index], [field]: value }; if (field === 'url') { const info = getVideoInfo(value); newVideos[index].provider = info.provider; newVideos[index].embedUrl = info.embedUrl; } onChange({ ...data, videos: newVideos }); };
+  const removeVideo = (index: number) => { onChange({ ...data, videos: data.videos.filter((_, i) => i !== index) }); };
+  const updateDocument = (type: 'pdf' | 'slides', field: string, value: string) => { const existing = data.documents.find(d => d.type === type); const updated = existing ? { ...existing, [field]: value } : { type, url: '', title: '', [field]: value }; onChange({ ...data, documents: [...data.documents.filter(d => d.type !== type), updated] }); };
+  const addQuizQuestion = () => { onChange({ ...data, quiz: [...data.quiz, { id: `q_${Date.now()}`, text: '', type: 'multiple_choice', options: ['', '', '', ''], correctAnswer: 0, points: 10 }] }); };
+  const updateQuestion = (index: number, updates: Partial<typeof data.quiz[0]>) => { const newQuiz = [...data.quiz]; newQuiz[index] = { ...newQuiz[index], ...updates }; onChange({ ...data, quiz: newQuiz }); };
+  const removeQuestion = (index: number) => { onChange({ ...data, quiz: data.quiz.filter((_, i) => i !== index) }); };
 
   const pdfDoc = data.documents.find(d => d.type === 'pdf');
   const slidesDoc = data.documents.find(d => d.type === 'slides');
 
   const sections = [
-    { id: 'info', label: 'Información', icon: FileText },
-    { id: 'videos', label: 'Videos', icon: Video, count: data.videos.length },
-    { id: 'docs', label: 'Documentos', icon: Presentation, count: data.documents.filter(d => d.url).length },
-    { id: 'quiz', label: 'Quiz', icon: Check, count: data.quiz.length },
+    { id: 'info', label: 'Información', icon: FileText }, { id: 'videos', label: 'Videos', icon: Video, count: data.videos.length },
+    { id: 'docs', label: 'Documentos', icon: Presentation, count: data.documents.filter(d => d.url).length }, { id: 'quiz', label: 'Quiz', icon: Check, count: data.quiz.length },
   ] as const;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-[#0f1419] border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
         
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-800 flex-shrink-0">
-          <div>
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-cyan-400" />
-              Crear Nuevo Tema
-            </h2>
-            <p className="text-sm text-gray-400 mt-0.5">Configura el contenido completo del tema</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800">
-            <X className="w-5 h-5" />
-          </button>
+          <div><h2 className="text-lg font-semibold text-white flex items-center gap-2"><Plus className="w-5 h-5 text-cyan-400" />Crear Nuevo Tema</h2><p className="text-sm text-gray-400 mt-0.5">Configura el contenido completo del tema</p></div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-gray-800 px-5">
           {sections.map(section => (
-            <button
-              key={section.id}
-              onClick={() => setActiveSection(section.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative ${
-                activeSection === section.id ? 'text-cyan-400' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <section.icon className="w-4 h-4" />
-              {section.label}
-              {'count' in section && (section as any).count > 0 && (
-                <span className="bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5 rounded-full">{(section as any).count}</span>
-              )}
+            <button key={section.id} onClick={() => setActiveSection(section.id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative ${activeSection === section.id ? 'text-cyan-400' : 'text-gray-400 hover:text-white'}`}>
+              <section.icon className="w-4 h-4" />{section.label}{'count' in section && (section as any).count > 0 && (<span className="bg-cyan-500/20 text-cyan-400 text-xs px-1.5 py-0.5 rounded-full">{(section as any).count}</span>)}
               {activeSection === section.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-cyan-500" />}
             </button>
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-5">
-          
-          {/* Sección: Información Básica */}
           {activeSection === 'info' && (
             <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Título del Tema <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={data.title}
-                  onChange={(e) => onChange({ ...data, title: e.target.value })}
-                  placeholder="Ej: Introducción a la gramática básica"
-                  className="w-full bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none"
-                  autoFocus
-                />
-              </div>
-
+              <div><label className="block text-sm font-medium text-gray-300 mb-2">Título del Tema <span className="text-red-400">*</span></label><input type="text" value={data.title} onChange={(e) => onChange({ ...data, title: e.target.value })} placeholder="Ej: Introducción a la gramática básica" className="w-full bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none" autoFocus /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Duración estimada</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={data.estimated_minutes}
-                      onChange={(e) => onChange({ ...data, estimated_minutes: parseInt(e.target.value) || 30 })}
-                      className="w-24 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                    <span className="text-gray-400">minutos</span>
-                  </div>
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={data.is_published}
-                      onChange={(e) => onChange({ ...data, is_published: e.target.checked })}
-                      className="w-4 h-4 accent-cyan-500"
-                    />
-                    <span className="text-sm text-gray-300">Publicar inmediatamente</span>
-                  </label>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-300 mb-2">Duración estimada</label><div className="flex items-center gap-2"><input type="number" value={data.estimated_minutes} onChange={(e) => onChange({ ...data, estimated_minutes: parseInt(e.target.value) || 30 })} className="w-24 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-cyan-500 focus:outline-none" /><span className="text-gray-400">minutos</span></div></div>
+                <div className="flex items-end"><label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={data.is_published} onChange={(e) => onChange({ ...data, is_published: e.target.checked })} className="w-4 h-4 accent-cyan-500" /><span className="text-sm text-gray-300">Publicar inmediatamente</span></label></div>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Introducción al tema</label>
-                <textarea
-                  value={data.introduction}
-                  onChange={(e) => onChange({ ...data, introduction: e.target.value })}
-                  placeholder="Escribe una breve introducción que prepare al estudiante..."
-                  rows={4}
-                  className="w-full bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none resize-none"
-                />
-                <p className="text-xs text-gray-500 mt-1">Soporta formato Markdown</p>
-              </div>
+              <div><label className="block text-sm font-medium text-gray-300 mb-2">Introducción al tema</label><textarea value={data.introduction} onChange={(e) => onChange({ ...data, introduction: e.target.value })} placeholder="Escribe una breve introducción que prepare al estudiante..." rows={4} className="w-full bg-[#030712] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none resize-none" /><p className="text-xs text-gray-500 mt-1">Soporta formato Markdown</p></div>
             </div>
           )}
 
-          {/* Sección: Videos */}
           {activeSection === 'videos' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium text-white">Videos Explicativos</h3>
-                  <p className="text-xs text-gray-400 mt-1">Agrega hasta 3 videos (YouTube o Vimeo)</p>
-                </div>
-              </div>
-
+              <div className="flex items-center justify-between"><div><h3 className="font-medium text-white">Videos Explicativos</h3><p className="text-xs text-gray-400 mt-1">Agrega hasta 3 videos (YouTube o Vimeo)</p></div></div>
               {data.videos.map((video, idx) => (
                 <div key={video.id} className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-300">Video {idx + 1}</span>
-                    <button onClick={() => removeVideo(idx)} className="text-gray-400 hover:text-red-400 p-1">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      value={video.title}
-                      onChange={(e) => updateVideo(idx, 'title', e.target.value)}
-                      placeholder="Título del video"
-                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                    <input
-                      type="number"
-                      value={video.duration_seconds || ''}
-                      onChange={(e) => updateVideo(idx, 'duration_seconds', parseInt(e.target.value) || 0)}
-                      placeholder="Duración (seg)"
-                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-                  
-                  <div className="relative">
-                    <input
-                      type="url"
-                      value={video.url}
-                      onChange={(e) => updateVideo(idx, 'url', e.target.value)}
-                      placeholder="https://youtube.com/watch?v=... o https://vimeo.com/..."
-                      className={`w-full bg-[#030712] border rounded-lg px-3 py-2 pr-10 text-sm text-white focus:outline-none ${
-                        video.url && video.provider === 'unknown' 
-                          ? 'border-red-500 focus:border-red-500' 
-                          : 'border-gray-700 focus:border-cyan-500'
-                      }`}
-                    />
-                    {video.url && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2">
-                        {video.provider !== 'unknown' ? (
-                          <Check className="w-4 h-4 text-green-400" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-red-400" />
-                        )}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Preview del video */}
-                  {video.embedUrl && (
-                    <div className="aspect-video rounded-lg overflow-hidden border border-gray-700">
-                      <iframe
-                        src={video.embedUrl}
-                        title={video.title || 'Video Preview'}
-                        className="w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between"><span className="text-sm font-medium text-gray-300">Video {idx + 1}</span><button onClick={() => removeVideo(idx)} className="text-gray-400 hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button></div>
+                  <div className="grid grid-cols-2 gap-3"><input type="text" value={video.title} onChange={(e) => updateVideo(idx, 'title', e.target.value)} placeholder="Título del video" className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /><input type="number" value={video.duration_seconds || ''} onChange={(e) => updateVideo(idx, 'duration_seconds', parseInt(e.target.value) || 0)} placeholder="Duración (seg)" className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /></div>
+                  <div className="relative"><input type="url" value={video.url} onChange={(e) => updateVideo(idx, 'url', e.target.value)} placeholder="https://youtube.com/watch?v=... o https://vimeo.com/..." className={`w-full bg-[#030712] border rounded-lg px-3 py-2 pr-10 text-sm text-white focus:outline-none ${video.url && video.provider === 'unknown' ? 'border-red-500 focus:border-red-500' : 'border-gray-700 focus:border-cyan-500'}`} />{video.url && (<span className="absolute right-3 top-1/2 -translate-y-1/2">{video.provider !== 'unknown' ? (<Check className="w-4 h-4 text-green-400" />) : (<AlertCircle className="w-4 h-4 text-red-400" />)}</span>)}</div>
+                  {video.embedUrl && (<div className="aspect-video rounded-lg overflow-hidden border border-gray-700"><iframe src={video.embedUrl} title={video.title || 'Video Preview'} className="w-full h-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div>)}
                 </div>
               ))}
-
-              {data.videos.length < 3 && (
-                <button
-                  onClick={addVideo}
-                  className="w-full py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-cyan-500/50 hover:text-cyan-400 transition-colors text-sm flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Agregar video ({data.videos.length}/3)
-                </button>
-              )}
+              {data.videos.length < 3 && (<button onClick={addVideo} className="w-full py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-cyan-500/50 hover:text-cyan-400 transition-colors text-sm flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Agregar video ({data.videos.length}/3)</button>)}
             </div>
           )}
 
-          {/* Sección: Documentos */}
           {activeSection === 'docs' && (
             <div className="space-y-6">
-              {/* PDF */}
               <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="w-5 h-5 text-orange-400" />
-                  <h3 className="font-medium text-white">Documento PDF</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Título</label>
-                    <input
-                      type="text"
-                      value={pdfDoc?.title || ''}
-                      onChange={(e) => updateDocument('pdf', 'title', e.target.value)}
-                      placeholder="Ej: Guía de estudio"
-                      className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">URL del PDF</label>
-                    <input
-                      type="url"
-                      value={pdfDoc?.url || ''}
-                      onChange={(e) => updateDocument('pdf', 'url', e.target.value)}
-                      placeholder="https://..."
-                      className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
+                <div className="flex items-center gap-2 mb-4"><FileText className="w-5 h-5 text-orange-400" /><h3 className="font-medium text-white">Documento PDF</h3></div>
+                <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs text-gray-400 mb-1">Título</label><input type="text" value={pdfDoc?.title || ''} onChange={(e) => updateDocument('pdf', 'title', e.target.value)} placeholder="Ej: Guía de estudio" className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /></div><div><label className="block text-xs text-gray-400 mb-1">URL del PDF</label><input type="url" value={pdfDoc?.url || ''} onChange={(e) => updateDocument('pdf', 'url', e.target.value)} placeholder="https://..." className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /></div></div>
               </div>
-
-              {/* Slides */}
               <div className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Presentation className="w-5 h-5 text-purple-400" />
-                  <h3 className="font-medium text-white">Diapositivas</h3>
-                </div>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">Título</label>
-                      <input
-                        type="text"
-                        value={slidesDoc?.title || ''}
-                        onChange={(e) => updateDocument('slides', 'title', e.target.value)}
-                        placeholder="Ej: Presentación del tema"
-                        className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-400 mb-1">Proveedor</label>
-                      <select
-                        value={slidesDoc?.provider || 'google_slides'}
-                        onChange={(e) => updateDocument('slides', 'provider', e.target.value)}
-                        className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                      >
-                        <option value="google_slides">Google Slides</option>
-                        <option value="canva">Canva</option>
-                        <option value="pdf">PDF</option>
-                        <option value="custom">URL Directa</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">URL de las diapositivas</label>
-                    <input
-                      type="url"
-                      value={slidesDoc?.url || ''}
-                      onChange={(e) => updateDocument('slides', 'url', e.target.value)}
-                      placeholder="https://docs.google.com/presentation/..."
-                      className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
+                <div className="flex items-center gap-2 mb-4"><Presentation className="w-5 h-5 text-purple-400" /><h3 className="font-medium text-white">Diapositivas</h3></div>
+                <div className="space-y-4"><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs text-gray-400 mb-1">Título</label><input type="text" value={slidesDoc?.title || ''} onChange={(e) => updateDocument('slides', 'title', e.target.value)} placeholder="Ej: Presentación del tema" className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /></div><div><label className="block text-xs text-gray-400 mb-1">Proveedor</label><select value={slidesDoc?.provider || 'google_slides'} onChange={(e) => updateDocument('slides', 'provider', e.target.value)} className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"><option value="google_slides">Google Slides</option><option value="canva">Canva</option><option value="pdf">PDF</option><option value="custom">URL Directa</option></select></div></div><div><label className="block text-xs text-gray-400 mb-1">URL de las diapositivas</label><input type="url" value={slidesDoc?.url || ''} onChange={(e) => updateDocument('slides', 'url', e.target.value)} placeholder="https://docs.google.com/presentation/..." className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /></div></div>
               </div>
             </div>
           )}
 
-          {/* Sección: Quiz */}
           {activeSection === 'quiz' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium text-white">Cuestionario del Tema</h3>
-                  <p className="text-xs text-gray-400 mt-1">Preguntas de repaso para evaluar comprensión</p>
-                </div>
-              </div>
-
+              <div className="flex items-center justify-between"><div><h3 className="font-medium text-white">Cuestionario del Tema</h3><p className="text-xs text-gray-400 mt-1">Preguntas de repaso para evaluar comprensión</p></div></div>
               {data.quiz.map((q, idx) => (
                 <div key={q.id} className="bg-[#0a0f1a] border border-gray-800 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-cyan-400">Pregunta {idx + 1}</span>
-                    <button onClick={() => removeQuestion(idx)} className="text-gray-400 hover:text-red-400 p-1">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  <textarea
-                    value={q.text}
-                    onChange={(e) => updateQuestion(idx, { text: e.target.value })}
-                    placeholder="Escribe la pregunta..."
-                    rows={2}
-                    className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none resize-none"
-                  />
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <select
-                      value={q.type}
-                      onChange={(e) => updateQuestion(idx, { 
-                        type: e.target.value as 'multiple_choice' | 'true_false',
-                        options: e.target.value === 'true_false' ? ['Verdadero', 'Falso'] : q.options
-                      })}
-                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    >
-                      <option value="multiple_choice">Opción múltiple</option>
-                      <option value="true_false">Verdadero/Falso</option>
-                    </select>
-                    <input
-                      type="number"
-                      value={q.points}
-                      onChange={(e) => updateQuestion(idx, { points: parseInt(e.target.value) || 10 })}
-                      placeholder="Puntos"
-                      className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-gray-400">Opciones (marca la correcta)</label>
-                    {q.options.map((opt, optIdx) => (
-                      <div key={optIdx} className="flex items-center gap-2">
-                        <button
-                          onClick={() => updateQuestion(idx, { correctAnswer: optIdx })}
-                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                            q.correctAnswer === optIdx 
-                              ? 'border-green-500 bg-green-500/20' 
-                              : 'border-gray-600 hover:border-gray-500'
-                          }`}
-                        >
-                          {q.correctAnswer === optIdx && <Check className="w-3 h-3 text-green-400" />}
-                        </button>
-                        <input
-                          type="text"
-                          value={opt}
-                          onChange={(e) => {
-                            const newOptions = [...q.options];
-                            newOptions[optIdx] = e.target.value;
-                            updateQuestion(idx, { options: newOptions });
-                          }}
-                          placeholder={`Opción ${String.fromCharCode(65 + optIdx)}`}
-                          disabled={q.type === 'true_false'}
-                          className="flex-1 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50"
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <div className="flex items-center justify-between"><span className="text-sm font-medium text-cyan-400">Pregunta {idx + 1}</span><button onClick={() => removeQuestion(idx)} className="text-gray-400 hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button></div>
+                  <textarea value={q.text} onChange={(e) => updateQuestion(idx, { text: e.target.value })} placeholder="Escribe la pregunta..." rows={2} className="w-full bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none resize-none" />
+                  <div className="grid grid-cols-2 gap-3"><select value={q.type} onChange={(e) => updateQuestion(idx, { type: e.target.value as 'multiple_choice' | 'true_false', options: e.target.value === 'true_false' ? ['Verdadero', 'Falso'] : q.options })} className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"><option value="multiple_choice">Opción múltiple</option><option value="true_false">Verdadero/Falso</option></select><input type="number" value={q.points} onChange={(e) => updateQuestion(idx, { points: parseInt(e.target.value) || 10 })} placeholder="Puntos" className="bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none" /></div>
+                  <div className="space-y-2"><label className="text-xs text-gray-400">Opciones (marca la correcta)</label>{q.options.map((opt, optIdx) => (<div key={optIdx} className="flex items-center gap-2"><button onClick={() => updateQuestion(idx, { correctAnswer: optIdx })} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${q.correctAnswer === optIdx ? 'border-green-500 bg-green-500/20' : 'border-gray-600 hover:border-gray-500'}`}>{q.correctAnswer === optIdx && <Check className="w-3 h-3 text-green-400" />}</button><input type="text" value={opt} onChange={(e) => { const newOptions = [...q.options]; newOptions[optIdx] = e.target.value; updateQuestion(idx, { options: newOptions }); }} placeholder={`Opción ${String.fromCharCode(65 + optIdx)}`} disabled={q.type === 'true_false'} className="flex-1 bg-[#030712] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50" /></div>))}</div>
                 </div>
               ))}
-
-              <button
-                onClick={addQuizQuestion}
-                className="w-full py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-purple-500/50 hover:text-purple-400 transition-colors text-sm flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Agregar pregunta
-              </button>
+              <button onClick={addQuizQuestion} className="w-full py-3 border border-dashed border-gray-700 text-gray-400 rounded-xl hover:border-purple-500/50 hover:text-purple-400 transition-colors text-sm flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Agregar pregunta</button>
             </div>
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between p-5 border-t border-gray-800 bg-[#0a0f1a] flex-shrink-0">
-          <div className="text-sm text-gray-400">
-            {data.videos.filter(v => v.embedUrl).length} video(s) · 
-            {data.documents.filter(d => d.url).length} documento(s) · 
-            {data.quiz.length} pregunta(s)
-          </div>
+          <div className="text-sm text-gray-400">{data.videos.filter(v => v.embedUrl).length} video(s) · {data.documents.filter(d => d.url).length} documento(s) · {data.quiz.length} pregunta(s)</div>
           <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white transition-colors">
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || !data.title.trim()}
-              className="px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                  Creando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Crear Tema
-                </>
-              )}
-            </button>
+            <button onClick={onClose} className="px-4 py-2 text-gray-400 hover:text-white transition-colors">Cancelar</button>
+            <button onClick={handleSave} disabled={saving || !data.title.trim()} className="px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{saving ? <><div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />Creando...</> : <><Save className="w-4 h-4" />Crear Tema</>}</button>
           </div>
         </div>
       </div>

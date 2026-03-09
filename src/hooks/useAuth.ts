@@ -4,7 +4,7 @@ import { createClient } from '@/utils/supabase/client'
 import { Profile, USER_TYPES } from '@/types/lms'
 import { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 
 interface AuthState {
   user: User | null
@@ -21,20 +21,32 @@ export function useAuth() {
     loading: true,
   })
   
+  // Ref to track current state in async callbacks (avoids stale closures)
+  const stateRef = useRef(state)
+  stateRef.current = state
+
   const router = useRouter()
   // createClient() is now a singleton — same instance every call
   const supabase = createClient()
 
   useEffect(() => {
     let mounted = true
-    let initialSessionHandled = false
 
-    // Obtener sesión inicial
+    // Obtener sesión inicial (con refresh automático si el token expiró)
     const getInitialSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
+        // getSession() reads from storage; if stale, refreshSession() gets a new one
+        let { data: { session }, error } = await supabase.auth.getSession()
         
         if (!mounted) return
+
+        // If session looks expired or missing, try to refresh it
+        if (!session || error) {
+          console.log('[useAuth] No initial session or error, attempting refresh...')
+          const refreshResult = await supabase.auth.refreshSession()
+          session = refreshResult.data?.session ?? null
+          error = refreshResult.error
+        }
 
         if (error) {
           console.error('Error obteniendo sesión:', error)
@@ -54,11 +66,9 @@ export function useAuth() {
         } else {
           setState(prev => ({ ...prev, loading: false }))
         }
-        initialSessionHandled = true
       } catch (err) {
         console.error('Error en getInitialSession:', err)
         if (mounted) setState(prev => ({ ...prev, loading: false }))
-        initialSessionHandled = true
       }
     }
 
@@ -69,13 +79,13 @@ export function useAuth() {
       async (event, session) => {
         if (!mounted) return
 
+        console.log('[useAuth] onAuthStateChange:', event)
+
         // Skip INITIAL_SESSION — we already handle it above via getInitialSession()
         if (event === 'INITIAL_SESSION') return
         
         if (event === 'SIGNED_IN' && session?.user) {
-          // If getInitialSession already handled this session, skip the redundant fetch
-          if (initialSessionHandled && state.user?.id === session.user.id) return
-          
+          // Always fetch profile on SIGNED_IN to ensure we have fresh data
           const profile = await fetchProfile(session.user.id)
           if (!mounted) return
           setState({
@@ -85,12 +95,25 @@ export function useAuth() {
             loading: false,
           })
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Session refreshed — update session but keep existing profile
-          setState(prev => ({
-            ...prev,
-            user: session.user,
-            session,
-          }))
+          // Session refreshed — update session AND re-fetch profile if missing
+          const currentProfile = stateRef.current.profile
+          if (!currentProfile) {
+            console.log('[useAuth] TOKEN_REFRESHED: profile was null, re-fetching...')
+            const profile = await fetchProfile(session.user.id)
+            if (!mounted) return
+            setState({
+              user: session.user,
+              profile,
+              session,
+              loading: false,
+            })
+          } else {
+            setState(prev => ({
+              ...prev,
+              user: session.user,
+              session,
+            }))
+          }
         } else if (event === 'SIGNED_OUT') {
           setState({
             user: null,
@@ -103,9 +126,62 @@ export function useAuth() {
       }
     )
 
+    // --- Recover session when tab regains focus (after sleep / idle) ---
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return
+      
+      try {
+        const current = stateRef.current
+        // If we think we're logged in but profile or session is stale, refresh
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!mounted) return
+
+        if (session?.user) {
+          // Re-fetch profile if it was lost
+          if (!current.profile || current.user?.id !== session.user.id) {
+            console.log('[useAuth] Tab focus: refreshing profile...')
+            const profile = await fetchProfile(session.user.id)
+            if (!mounted) return
+            setState({
+              user: session.user,
+              profile,
+              session,
+              loading: false,
+            })
+          } else {
+            // Just update the session token silently
+            setState(prev => ({ ...prev, session, user: session.user }))
+          }
+        } else if (current.user) {
+          // User was logged in but session is gone — try refresh
+          console.log('[useAuth] Tab focus: session lost, attempting refresh...')
+          const { data } = await supabase.auth.refreshSession()
+          if (!mounted) return
+          if (data.session?.user) {
+            const profile = await fetchProfile(data.session.user.id)
+            if (!mounted) return
+            setState({
+              user: data.session.user,
+              profile,
+              session: data.session,
+              loading: false,
+            })
+          }
+        }
+      } catch (err) {
+        console.warn('[useAuth] Tab focus recovery error:', err)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleVisibilityChange)
+
     return () => {
       mounted = false
       subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleVisibilityChange)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

@@ -240,6 +240,40 @@ export default function StudentTasksPage() {
     }
   };
 
+  // 🔥 NUEVA FUNCIÓN: Validador de archivos 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setSubmissionFile(null);
+      return;
+    }
+
+    const allowedTypes = [
+      'application/pdf', 
+      'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert('⚠️ Solo se permiten archivos PDF o documentos de Word.');
+      e.target.value = ''; 
+      setSubmissionFile(null);
+      return; 
+    }
+
+    const maxMb = selectedAssignment?.max_file_size_mb || 10;
+    const maxSizeInBytes = maxMb * 1024 * 1024;
+    
+    if (file.size > maxSizeInBytes) {
+      alert(`⚠️ El archivo es demasiado pesado. El límite máximo es de ${maxMb}MB.`);
+      e.target.value = '';
+      setSubmissionFile(null);
+      return;
+    }
+
+    setSubmissionFile(file);
+  };
+
   const submitAssignment = async () => {
     if (!selectedAssignment) return;
     setSubmitting(true);
@@ -801,13 +835,19 @@ export default function StudentTasksPage() {
                     Archivo adjunto {selectedAssignment.allowed_file_types && selectedAssignment.allowed_file_types.length > 0 
                       ? `(${selectedAssignment.allowed_file_types.map(t => t.toUpperCase()).join(', ')})` : '(opcional)'}
                   </label>
+                  
+                  {/* 🔥 INPUT MEJORADO Y RESTRINGIDO */}
                   <input
                     type="file"
-                    onChange={(e) => setSubmissionFile(e.target.files?.[0] || null)}
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleFileChange}
                     className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-cyan-500 file:text-white hover:file:bg-cyan-600"
                   />
-                  {selectedAssignment.max_file_size_mb && (
-                    <p className="text-xs text-gray-500 mt-1">Tamaño máximo: {selectedAssignment.max_file_size_mb} MB</p>
+                  
+                  {selectedAssignment.max_file_size_mb ? (
+                    <p className="text-xs text-gray-500 mt-1">Tamaño máximo: {selectedAssignment.max_file_size_mb} MB | Solo PDF o Word</p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">Tamaño máximo: 10 MB | Solo PDF o Word</p>
                   )}
                 </div>
 
@@ -828,7 +868,13 @@ export default function StudentTasksPage() {
                 >
                   Cancelar
                 </Button>
-                <Button onClick={submitAssignment} variant="primary" disabled={!submissionContent.trim() || submitting} className="flex items-center gap-2">
+                {/* 🔥 BOTÓN MEJORADO (Permite enviar si hay texto O si hay archivo) */}
+                <Button 
+                  onClick={submitAssignment} 
+                  variant="primary" 
+                  disabled={(!submissionContent.trim() && !submissionFile) || submitting} 
+                  className="flex items-center gap-2"
+                >
                   {submitting ? (
                     <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Enviando...</>
                   ) : (

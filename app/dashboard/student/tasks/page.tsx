@@ -240,7 +240,20 @@ export default function StudentTasksPage() {
     }
   };
 
-  // 🔥 NUEVA FUNCIÓN: Validador de archivos 
+  // 🔥 Helper para traducir los tipos de archivo de la DB a formato HTML
+  const getAcceptTypes = (types: string[] | undefined) => {
+    if (!types || types.length === 0) return '*/*';
+    const mapping: Record<string, string> = {
+      'pdf': '.pdf,application/pdf',
+      'doc': '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'img': 'image/*',
+      'video': 'video/*',
+      'audio': 'audio/*'
+    };
+    return types.map(t => mapping[t.toLowerCase()] || `.${t}`).join(',');
+  };
+
+  // 🔥 Validador inteligente de archivos
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
@@ -248,17 +261,26 @@ export default function StudentTasksPage() {
       return;
     }
 
-    const allowedTypes = [
-      'application/pdf', 
-      'application/msword', 
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    ];
+    if (selectedAssignment?.allowed_file_types && selectedAssignment.allowed_file_types.length > 0) {
+      const allowed = selectedAssignment.allowed_file_types.map(t => t.toLowerCase());
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const isImg = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
 
-    if (!allowedTypes.includes(file.type)) {
-      alert('⚠️ Solo se permiten archivos PDF o documentos de Word.');
-      e.target.value = ''; 
-      setSubmissionFile(null);
-      return; 
+      const isValid = allowed.some(type => {
+        if (type === 'img' || type === 'image') return isImg;
+        if (type === 'video') return isVideo;
+        if (type === 'pdf') return file.type === 'application/pdf' || fileExt === 'pdf';
+        if (type === 'doc') return file.type.includes('word') || fileExt === 'doc' || fileExt === 'docx';
+        return fileExt === type;
+      });
+
+      if (!isValid) {
+        alert(`⚠️ Formato no permitido. Esta tarea solo acepta: ${allowed.join(', ').toUpperCase()}`);
+        e.target.value = ''; 
+        setSubmissionFile(null);
+        return; 
+      }
     }
 
     const maxMb = selectedAssignment?.max_file_size_mb || 10;
@@ -315,7 +337,6 @@ export default function StudentTasksPage() {
         }
       }
 
-      // Usar RPC submit_assignment (SECURITY DEFINER, evita problemas de RLS)
       const submittedFiles = attachmentUrl 
         ? [{ url: attachmentUrl, name: submissionFile?.name || 'archivo', uploaded_at: new Date().toISOString() }]
         : [];
@@ -835,20 +856,18 @@ export default function StudentTasksPage() {
                     Archivo adjunto {selectedAssignment.allowed_file_types && selectedAssignment.allowed_file_types.length > 0 
                       ? `(${selectedAssignment.allowed_file_types.map(t => t.toUpperCase()).join(', ')})` : '(opcional)'}
                   </label>
-                  
-                  {/* 🔥 INPUT MEJORADO Y RESTRINGIDO */}
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept={getAcceptTypes(selectedAssignment.allowed_file_types)}
                     onChange={handleFileChange}
                     className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-cyan-500 file:text-white hover:file:bg-cyan-600"
                   />
-                  
-                  {selectedAssignment.max_file_size_mb ? (
-                    <p className="text-xs text-gray-500 mt-1">Tamaño máximo: {selectedAssignment.max_file_size_mb} MB | Solo PDF o Word</p>
-                  ) : (
-                    <p className="text-xs text-gray-500 mt-1">Tamaño máximo: 10 MB | Solo PDF o Word</p>
-                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    Tamaño máximo: {selectedAssignment.max_file_size_mb || 10} MB 
+                    {selectedAssignment.allowed_file_types && selectedAssignment.allowed_file_types.length > 0 
+                      ? ` | Solo: ${selectedAssignment.allowed_file_types.map(t => t.toUpperCase()).join(', ')}` 
+                      : ''}
+                  </p>
                 </div>
 
                 {selectedAssignment.rubric && (
@@ -868,7 +887,6 @@ export default function StudentTasksPage() {
                 >
                   Cancelar
                 </Button>
-                {/* 🔥 BOTÓN MEJORADO (Permite enviar si hay texto O si hay archivo) */}
                 <Button 
                   onClick={submitAssignment} 
                   variant="primary" 

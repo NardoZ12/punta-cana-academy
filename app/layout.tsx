@@ -3,6 +3,7 @@ import './globals.css';
 import { Inter } from 'next/font/google';
 import Providers from '../src/utils/Providers';
 import { EmailVerificationBanner } from '../src/components/molecules/EmailVerificationBanner';
+import Script from 'next/script';
 
 const inter = Inter({ subsets: ['latin'] });
 

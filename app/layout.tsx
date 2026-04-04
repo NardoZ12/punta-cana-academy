@@ -7,8 +7,6 @@ import { EmailVerificationBanner } from '../src/components/molecules/EmailVerifi
 
 const inter = Inter({ subsets: ['latin'] });
 
-const GA_MEASUREMENT_ID = 'G-5QMFTBP765';
-
 export const metadata = {
   title: 'Punta Cana Academy',
   description: 'La academia híbrida más moderna del Caribe.',
@@ -27,17 +25,19 @@ export default function RootLayout({
   return (
     <html lang="es" className={inter.className}>
       <head>
-        {/* Google Analytics */}
+        {/* Google tag (gtag.js) */}
         <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-          strategy="afterInteractive"
+          async
+          src="https://www.googletagmanager.com/gtag/js?id=G-5QMFTBP765"
+          strategy="beforeInteractive"
         />
-        <Script id="google-analytics" strategy="afterInteractive">
+        <Script id="gtag-init" strategy="beforeInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-            gtag('config', '${GA_MEASUREMENT_ID}');
+
+            gtag('config', 'G-5QMFTBP765');
           `}
         </Script>
       </head>

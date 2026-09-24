@@ -9,7 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  
+
   const { signIn } = useAuthContext()
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -19,13 +19,11 @@ export default function LoginPage() {
 
     try {
       const { error: authError } = await signIn(email, password)
-      
+
       if (authError) {
         setError(authError.message || authError)
         setLoading(false)
       } else {
-        // 🔥 FIX: Forzar recarga completa para que las cookies de sesión
-        // se pasen correctamente al middleware y al DashboardTrafficCop.
         window.location.href = '/dashboard'
       }
     } catch (err) {
@@ -35,28 +33,27 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-2xl">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Iniciar Sesión
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Accede a tu cuenta de Punta Cana Academy
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(59,180,255,0.18),_transparent_25%),linear-gradient(135deg,#071421_0%,#0d1b2a_45%,#0c2341_100%)] px-4 py-12">
+      <div className="w-full max-w-md rounded-[28px] border border-cyan-400/20 bg-slate-950/80 p-8 shadow-[0_30px_80px_rgba(8,19,33,0.55)] backdrop-blur-xl">
+        <div className="text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-500/10 text-2xl shadow-[0_0_22px_rgba(59,180,255,0.18)]">
+            🎓
+          </div>
+          <h2 className="text-3xl font-black tracking-tight text-white">Iniciar sesión</h2>
+          <p className="mt-2 text-sm text-slate-300">Accede a tu cuenta de Punta Cana Academy</p>
         </div>
-        
+
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
               {error}
             </div>
           )}
-          
+
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Correo Electrónico
+              <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-200">
+                Correo electrónico
               </label>
               <input
                 id="email"
@@ -64,15 +61,15 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-black"
+                className="mt-1 block w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-white placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
                 placeholder="tu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            
+
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-200">
                 Contraseña
               </label>
               <input
@@ -81,7 +78,7 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-black"
+                className="mt-1 block w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-white placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
                 placeholder="Tu contraseña"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -89,40 +86,30 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-            >
-              {loading ? (
-                <div className="flex items-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Iniciando sesión...
-                </div>
-              ) : (
-                'Iniciar Sesión'
-              )}
-            </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex w-full items-center justify-center rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 px-4 py-3 text-sm font-bold text-slate-950 shadow-[0_20px_30px_rgba(59,180,255,0.2)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
+                Iniciando sesión...
+              </span>
+            ) : (
+              'Ingresar'
+            )}
+          </button>
+
+          <div className="text-center text-sm text-slate-300">
+            ¿No tienes una cuenta?{' '}
+            <Link href="/registro" className="font-semibold text-cyan-300 hover:text-cyan-200">
+              Regístrate aquí
+            </Link>
           </div>
 
           <div className="text-center">
-            <p className="text-sm text-gray-600">
-              ¿No tienes una cuenta?{' '}
-              <Link 
-                href="/registro" 
-                className="font-medium text-indigo-600 hover:text-indigo-500"
-              >
-                Regístrate aquí
-              </Link>
-            </p>
-          </div>
-
-          <div className="text-center">
-            <Link 
-              href="/" 
-              className="font-medium text-gray-600 hover:text-gray-500"
-            >
+            <Link href="/" className="text-sm text-slate-400 hover:text-slate-200">
               ← Volver al inicio
             </Link>
           </div>

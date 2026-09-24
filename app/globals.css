@@ -1,8 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --pca-bg: #071421;
+  --pca-bg-soft: #0d1b2a;
+  --pca-card: #0f172a;
+  --pca-card-soft: #101f34;
+  --pca-card-alt: #12263d;
+  --pca-blue: #3bb4ff;
+  --pca-blue-strong: #1d9bf0;
+  --pca-cyan: #75e6ff;
+  --pca-ink: #e5eef9;
+  --pca-muted: #9bb0c7;
+  --pca-border: rgba(148, 163, 184, 0.18);
+  --pca-success: #34d399;
+  --pca-warning: #fbbf24;
+  --pca-danger: #f87171;
+  --background: #071421;
+  --foreground: #edf6ff;
 }
 
 @theme inline {
@@ -12,20 +26,33 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at top, rgba(59, 180, 255, 0.16), transparent 30%),
+    linear-gradient(180deg, #071421 0%, #091a2b 38%, #071421 100%);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
 }
 
-/* Forzar colores en formularios con fondo blanco */
+* {
+  box-sizing: border-box;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+::selection {
+  background: rgba(59, 180, 255, 0.35);
+  color: white;
+}
+
 .bg-white input,
 .bg-white select,
 .bg-white textarea {
@@ -33,11 +60,55 @@ body {
   background-color: #ffffff !important;
 }
 
-.bg-white input::placeholder {
+.bg-white input::placeholder,
+.bg-white textarea::placeholder {
   color: #9ca3af !important;
 }
 
-/* Estilos para el banner de verificación de email */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.brand-surface {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(9, 26, 43, 0.94));
+  border: 1px solid var(--pca-border);
+  box-shadow: 0 20px 50px rgba(7, 20, 33, 0.35);
+}
+
+.brand-glow {
+  box-shadow: 0 0 0 1px rgba(117, 230, 255, 0.18), 0 20px 40px rgba(59, 180, 255, 0.15);
+}
+
+.brand-button {
+  background: linear-gradient(135deg, var(--pca-blue) 0%, var(--pca-blue-strong) 100%);
+  color: #03161f;
+  font-weight: 700;
+  border-radius: 9999px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  box-shadow: 0 10px 24px rgba(59, 180, 255, 0.28);
+}
+
+.brand-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.brand-button-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  color: white;
+  border: 1px solid rgba(117, 230, 255, 0.3);
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+
+.brand-button-secondary:hover {
+  background: rgba(117, 230, 255, 0.08);
+  border-color: rgba(117, 230, 255, 0.5);
+}
+
 .email-verification-banner {
   animation: slideInDown 0.3s ease-out;
 }
@@ -53,7 +124,6 @@ body {
   }
 }
 
-/* Animaciones para modales */
 .animate-in {
   animation: fadeInZoom 0.3s ease-out;
 }
@@ -91,17 +161,14 @@ body {
   }
 }
 
-/* Asegurar que el contenido principal tenga suficiente padding cuando el banner esté presente */
 body:has(.email-verification-banner) {
-  padding-top: 3.5rem; /* Altura aproximada del banner */
+  padding-top: 3.5rem;
 }
 
-/* Alternativa para navegadores que no soportan :has() */
 .body-with-banner {
   padding-top: 3.5rem;
 }
 
-/* Animaciones para el botón de WhatsApp */
 .animation-delay-200 {
   animation-delay: 200ms;
 }

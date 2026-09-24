@@ -944,47 +944,47 @@ export default function TeacherDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#030712] text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pt-24">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,180,255,0.12),_transparent_25%),linear-gradient(180deg,#071421_0%,#091a2b_48%,#071421_100%)] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 pt-24 sm:px-6">
         
         {/* HEADER */}
-        <header className="mb-10">
+        <header className="mb-8 rounded-[28px] border border-cyan-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.4)] backdrop-blur-xl">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
             <div>
-              <p className="text-cyan-400 text-sm font-medium tracking-wide uppercase mb-1">Panel de Control</p>
-              <h1 className="text-3xl lg:text-4xl font-bold text-white">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Espacio del profesor</p>
+              <h1 className="text-3xl font-black tracking-tight text-white md:text-4xl">
                 Hola, Prof. {teacherName.split(' ')[0]}
               </h1>
-              <p className="text-gray-500 mt-2">Gestiona tus cursos y estudiantes</p>
+              <p className="mt-2 text-sm text-slate-300">Diseña experiencias de aprendizaje y acompaña el progreso de tus estudiantes.</p>
             </div>
             
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-4 py-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Users className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs text-gray-500">Estudiantes</span>
+                  <span className="text-xs text-slate-300">Estudiantes</span>
                 </div>
                 <p className="text-xl font-bold text-white">{stats.totalStudents}</p>
               </div>
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-4 py-3">
+              <div className="rounded-2xl border border-sky-400/20 bg-sky-500/5 p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <BookOpen className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-gray-500">Cursos</span>
+                  <span className="text-xs text-slate-300">Cursos</span>
                 </div>
                 <p className="text-xl font-bold text-white">{stats.totalCourses}</p>
               </div>
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-4 py-3">
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <TrendingUp className="w-4 h-4 text-green-400" />
-                  <span className="text-xs text-gray-500">Promedio</span>
+                  <span className="text-xs text-slate-300">Promedio</span>
                 </div>
                 <p className="text-xl font-bold text-white">{stats.averageGrade}%</p>
               </div>
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-4 py-3">
+              <div className="rounded-2xl border border-orange-400/20 bg-orange-500/5 p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Target className="w-4 h-4 text-orange-400" />
-                  <span className="text-xs text-gray-500">Tareas</span>
+                  <span className="text-xs text-slate-300">Tareas</span>
                 </div>
                 <p className="text-xl font-bold text-white">{stats.pendingAssignments}</p>
               </div>
@@ -993,43 +993,48 @@ export default function TeacherDashboard() {
         </header>
 
         {/* CURSOS */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-cyan-400" />
-              Mis Cursos
-            </h2>
+        <section className="mb-8 rounded-[28px] border border-cyan-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
+                  <BookOpen className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-white">Mis cursos</h2>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">Selecciona un curso para gestionar su contenido y estudiantes.</p>
+            </div>
             <Link 
               href="/dashboard/teacher/create-course"
-              className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 px-5 py-2.5 text-sm font-bold text-slate-950 transition hover:brightness-110"
             >
               <Plus className="w-4 h-4" />
               Nuevo Curso
             </Link>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {courses.map((course) => (
               <button
                 key={course.id}
                 onClick={() => setSelectedCourseId(course.id)}
-                className={`text-left p-4 rounded-xl transition-all duration-200 ${
+                className={`text-left rounded-2xl p-4 transition-all duration-200 ${
                   selectedCourseId === course.id
-                    ? 'bg-cyan-500/10 border-2 border-cyan-500'
-                    : 'bg-[#0a0f1a] border border-gray-800/50 hover:border-gray-700'
+                    ? 'border-2 border-cyan-400 bg-cyan-500/10 shadow-[0_12px_30px_rgba(34,211,238,0.12)]'
+                    : 'border border-slate-800 bg-slate-900/60 hover:border-cyan-400/30 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold flex-shrink-0">
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-sky-500 font-black text-slate-950">
                     {course.title.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-white truncate">{course.title}</h3>
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-1">{course.description}</p>
+                    <h3 className="truncate font-semibold text-white">{course.title}</h3>
+                    <p className="mt-1 line-clamp-1 text-xs text-slate-400">{course.description}</p>
                     {selectedCourseId === course.id && (
                       <Link 
                         href={`/dashboard/teacher/course/${course.id}/edit`}
-                        className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 inline-flex items-center gap-1"
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-cyan-300 hover:text-cyan-200"
                       >
                         Editar curso <ChevronRight className="w-3 h-3" />
                       </Link>
@@ -1042,27 +1047,27 @@ export default function TeacherDashboard() {
 
           {/* Acciones del curso */}
           {selectedCourseId && (
-            <div className="flex gap-3 mt-4">
+            <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-800 pt-5">
               <button 
                 onClick={() => setIsTaskModalOpen(true)}
-                className="flex items-center gap-2 bg-[#0a0f1a] border border-gray-800 hover:border-cyan-500/50 text-white px-4 py-2.5 rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2.5 text-sm font-medium text-white transition hover:border-cyan-400/50 hover:bg-slate-900"
               >
                 <FileText className="w-4 h-4 text-blue-400" />
                 Asignar Tarea
               </button>
               <button 
                 onClick={() => setIsExamModalOpen(true)}
-                className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium px-4 py-2.5 rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:brightness-110"
               >
                 <Clock className="w-4 h-4" />
                 Crear Examen
               </button>
               <button 
                 onClick={() => setShowSubmissionsPanel(!showSubmissionsPanel)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+                className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors ${
                   showSubmissionsPanel 
-                    ? 'bg-green-500/20 border border-green-500/50 text-green-400' 
-                    : 'bg-[#0a0f1a] border border-gray-800 hover:border-green-500/50 text-white'
+                    ? 'border border-emerald-400/50 bg-emerald-500/15 text-emerald-300'
+                    : 'border border-slate-700 bg-slate-900/70 text-white hover:border-emerald-400/50'
                 }`}
               >
                 <ClipboardCheck className="w-4 h-4 text-green-400" />
@@ -1074,22 +1079,24 @@ export default function TeacherDashboard() {
 
         {/* PANEL DE ENTREGAS */}
         {showSubmissionsPanel && selectedCourseId && (
-          <section className="mb-8 bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+          <section className="mb-8 rounded-[28px] border border-emerald-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <ClipboardCheck className="w-5 h-5 text-green-400" />
+              <h2 className="flex items-center gap-3 text-xl font-bold text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
+                  <ClipboardCheck className="h-5 w-5" />
+                </span>
                 Entregas de Estudiantes - {currentCourse?.title || 'Curso'}
               </h2>
               <div className="flex items-center gap-3">
-                <span className="text-xs bg-yellow-500/10 text-yellow-400 px-3 py-1 rounded-full font-medium">
+                  <span className="rounded-full border border-yellow-400/20 bg-yellow-500/10 px-3 py-1 text-xs font-medium text-yellow-300">
                   {submissions.filter(s => s.status === 'submitted').length} pendientes
                 </span>
-                <span className="text-xs bg-green-500/10 text-green-400 px-3 py-1 rounded-full font-medium">
+                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
                   {submissions.filter(s => s.status === 'graded').length} calificadas
                 </span>
                 <button 
                   onClick={loadSubmissions}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 px-2 py-1"
+                  className="rounded-full px-2 py-1 text-xs text-cyan-300 hover:bg-cyan-500/10 hover:text-cyan-200"
                 >
                   Actualizar
                 </button>
@@ -1113,7 +1120,7 @@ export default function TeacherDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-800">
+                    <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
                       <th className="pb-3 font-medium">Estudiante</th>
                       <th className="pb-3 font-medium">Tarea</th>
                       <th className="pb-3 font-medium text-center">Fecha entrega</th>
@@ -1122,35 +1129,35 @@ export default function TeacherDashboard() {
                       <th className="pb-3 font-medium text-right">Acción</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-800/50">
+                  <tbody className="divide-y divide-slate-800/70">
                     {submissions.map((sub) => (
-                      <tr key={sub.id} className="group hover:bg-gray-800/20 transition-colors">
+                      <tr key={sub.id} className="group transition-colors hover:bg-slate-900/70">
                         <td className="py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-sky-500 text-xs font-bold text-slate-950">
                               {sub.student_name?.charAt(0) || 'E'}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-medium text-white text-sm truncate">{sub.student_name}</p>
-                              <p className="text-xs text-gray-500 truncate">{sub.student_email}</p>
+                              <p className="truncate text-sm font-semibold text-white">{sub.student_name}</p>
+                              <p className="truncate text-xs text-slate-500">{sub.student_email}</p>
                             </div>
                           </div>
                         </td>
                         <td className="py-4">
-                          <p className="text-sm text-white truncate max-w-[200px]">{sub.assignment_title}</p>
+                          <p className="max-w-[200px] truncate text-sm text-slate-200">{sub.assignment_title}</p>
                         </td>
                         <td className="py-4 text-center">
-                          <span className="text-xs text-gray-400">
+                            <span className="text-xs text-slate-400">
                             {new Date(sub.submitted_at).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </td>
                         <td className="py-4 text-center">
                           <span className={`px-2 py-1 text-xs rounded-full font-medium ${
                             sub.status === 'graded' 
-                              ? 'bg-green-500/20 text-green-400' 
+                              ? 'bg-emerald-500/15 text-emerald-300'
                               : sub.status === 'late'
                               ? 'bg-red-500/20 text-red-400'
-                              : 'bg-yellow-500/20 text-yellow-400'
+                              : 'bg-yellow-500/15 text-yellow-300'
                           }`}>
                             {sub.status === 'graded' ? 'Calificada' : sub.status === 'late' ? 'Tarde' : 'Pendiente'}
                           </span>
@@ -1158,7 +1165,7 @@ export default function TeacherDashboard() {
                         <td className="py-4 text-center">
                           {sub.score != null ? (
                             <span className={`text-sm font-semibold ${
-                              sub.score >= (sub.assignment_max_points || 100) * 0.7 ? 'text-green-400' : 'text-yellow-400'
+                              sub.score >= (sub.assignment_max_points || 100) * 0.7 ? 'text-emerald-300' : 'text-yellow-300'
                             }`}>
                               {sub.score}/{sub.assignment_max_points || 100}
                             </span>
@@ -1176,8 +1183,8 @@ export default function TeacherDashboard() {
                             }}
                             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               sub.status === 'graded'
-                                ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                                : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
+                                ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                : 'bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25'
                             }`}
                           >
                             {sub.status === 'graded' ? 'Editar' : 'Calificar'}
@@ -1196,13 +1203,15 @@ export default function TeacherDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* ESTUDIANTES */}
-          <section className="lg:col-span-2 bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
+          <section className="rounded-[28px] border border-sky-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-cyan-400" />
+              <h2 className="flex items-center gap-3 text-xl font-bold text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
+                  <GraduationCap className="h-5 w-5" />
+                </span>
                 Estudiantes - {currentCourse?.title || 'Curso'}
               </h2>
-              <span className="text-xs bg-cyan-500/10 text-cyan-400 px-3 py-1 rounded-full font-medium">
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
                 {enrollments.length} inscritos
               </span>
             </div>
@@ -1219,47 +1228,47 @@ export default function TeacherDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-800">
+                    <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
                       <th className="pb-3 font-medium">Estudiante</th>
                       <th className="pb-3 font-medium text-center">Progreso</th>
                       <th className="pb-3 font-medium text-center">Nota</th>
                       <th className="pb-3 font-medium text-right">Acción</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-800/50">
+                  <tbody className="divide-y divide-slate-800/70">
                     {enrollments.map((student, idx) => (
-                      <tr key={idx} className="group hover:bg-gray-800/20 transition-colors">
+                      <tr key={idx} className="group transition-colors hover:bg-slate-900/70">
                         <td className="py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-sky-500 text-sm font-bold text-slate-950">
                               {student.profiles?.full_name?.charAt(0) || 'E'}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-medium text-white text-sm truncate">{student.profiles?.full_name || 'Sin nombre'}</p>
-                              <p className="text-xs text-gray-500 truncate">{student.profiles?.email || ''}</p>
+                              <p className="truncate text-sm font-semibold text-white">{student.profiles?.full_name || 'Sin nombre'}</p>
+                              <p className="truncate text-xs text-slate-500">{student.profiles?.email || ''}</p>
                             </div>
                           </div>
                         </td>
                         <td className="py-4 text-center">
                           <div className="flex items-center justify-center gap-2">
-                            <div className="w-16 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                            <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-800">
                               <div 
-                                className="h-full bg-cyan-500 rounded-full"
+                                className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500"
                                 style={{ width: `${student.progress || 0}%` }}
                               />
                             </div>
-                            <span className="text-xs text-gray-400 w-8">{student.progress || 0}%</span>
+                            <span className="w-8 text-xs text-slate-400">{student.progress || 0}%</span>
                           </div>
                         </td>
                         <td className="py-4 text-center">
-                          <span className={`text-sm font-semibold ${(student.grade || 0) >= 70 ? 'text-green-400' : 'text-yellow-400'}`}>
+                            <span className={`text-sm font-semibold ${(student.grade || 0) >= 70 ? 'text-emerald-300' : 'text-yellow-300'}`}>
                             {student.grade || 0}
                           </span>
                         </td>
                         <td className="py-4 text-right">
                           <Link 
                             href={`/dashboard/teacher/student/${student.profiles?.id}`}
-                            className="text-cyan-400 hover:text-cyan-300 text-xs font-medium"
+                            className="text-xs font-medium text-cyan-300 hover:text-cyan-200"
                           >
                             Ver →
                           </Link>
@@ -1276,33 +1285,35 @@ export default function TeacherDashboard() {
           <aside className="space-y-6">
             
             {/* ESTADÍSTICAS DEL CURSO */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-cyan-400" />
+            <section className="rounded-[28px] border border-cyan-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <h3 className="mb-5 flex items-center gap-3 text-xl font-bold text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
+                  <BarChart3 className="h-5 w-5" />
+                </span>
                 Rendimiento
               </h3>
               
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-400">Tasa de Aprobación</span>
-                    <span className="text-white font-medium">{stats.passRate}%</span>
+                    <span className="text-slate-400">Tasa de aprobación</span>
+                    <span className="font-semibold text-white">{stats.passRate}%</span>
                   </div>
-                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-800">
                     <div 
-                      className="h-full bg-green-500 rounded-full transition-all"
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 transition-all"
                       style={{ width: `${stats.passRate}%` }}
                     />
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-400">Promedio General</span>
-                    <span className="text-white font-medium">{stats.averageGrade}%</span>
+                    <span className="text-slate-400">Promedio general</span>
+                    <span className="font-semibold text-white">{stats.averageGrade}%</span>
                   </div>
-                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-800">
                     <div 
-                      className="h-full bg-cyan-500 rounded-full transition-all"
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 transition-all"
                       style={{ width: `${stats.averageGrade}%` }}
                     />
                   </div>
@@ -1311,9 +1322,11 @@ export default function TeacherDashboard() {
             </section>
 
             {/* TAREAS ACTIVAS */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-orange-400" />
+            <section className="rounded-[28px] border border-orange-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <h3 className="mb-5 flex items-center gap-3 text-xl font-bold text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
+                  <Calendar className="h-5 w-5" />
+                </span>
                 Próximas Tareas
               </h3>
               
@@ -1322,14 +1335,14 @@ export default function TeacherDashboard() {
                   <div className="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
                     <CheckCircle className="w-6 h-6 text-green-500" />
                   </div>
-                  <p className="text-gray-500 text-sm">Sin tareas pendientes</p>
+                    <p className="text-sm text-slate-400">Sin tareas pendientes</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {pendingAssignments.slice(0, 4).map((a, idx) => (
-                    <div key={idx} className="bg-[#030712] border border-gray-800 rounded-lg p-3">
-                      <p className="text-sm font-medium text-white truncate">{a.title}</p>
-                      <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
+                    <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 transition hover:border-orange-400/30 hover:bg-slate-900">
+                      <p className="truncate text-sm font-semibold text-white">{a.title}</p>
+                      <p className="mt-1 flex items-center gap-1 text-xs text-orange-300">
                         <Clock className="w-3 h-3" />
                         {new Date(a.due_date).toLocaleDateString('es-ES')}
                       </p>
@@ -2051,7 +2064,7 @@ export default function TeacherDashboard() {
                 </div>
 
                 <div className="mt-4">
-                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-400 mb-1.5">
                     <MessageSquare className="w-4 h-4" />
                     Retroalimentación para el estudiante
                   </label>

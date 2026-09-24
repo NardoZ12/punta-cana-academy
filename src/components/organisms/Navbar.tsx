@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Button } from '../atoms/Button';
 
 export const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -12,47 +11,37 @@ export const Navbar = () => {
   const closeMenu = () => setIsMenuOpen(false);
 
   return (
-    <nav className="w-full h-20 bg-pca-black/90 backdrop-blur-md border-b border-gray-800 fixed top-0 left-0 z-50">
+    <nav className="w-full h-20 bg-slate-950/80 backdrop-blur-xl border-b border-white/10 fixed top-0 left-0 z-50">
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-        
-        {/* LOGO */}
-        <Link href="/" className="flex items-center gap-2" onClick={closeMenu}>
-          <div className="relative w-12 h-12"> 
-             <Image src="/images/logos/logo-pca.png" alt="PCA Logo" fill className="object-contain" />
+        <Link href="/" className="flex items-center gap-3" onClick={closeMenu}>
+          <div className="relative w-11 h-11 rounded-xl bg-white/5 border border-cyan-400/20 flex items-center justify-center shadow-[0_0_20px_rgba(59,180,255,0.18)]">
+            <Image src="/images/logos/logo-pca.png" alt="PCA Logo" fill className="object-contain p-1.5" />
           </div>
-          <span className="text-xl font-bold text-white hidden md:block">
-            Punta Cana <span className="text-pca-blue">Academy</span>
-          </span>
+          <div className="hidden md:block">
+            <div className="text-lg font-bold tracking-tight text-white">
+              Punta Cana <span className="text-cyan-400">Academy</span>
+            </div>
+          </div>
         </Link>
 
-        {/* LINKS CENTRALES */}
-        <div className="hidden md:flex items-center gap-8">
-          <Link href="/cursos" className="text-gray-300 hover:text-pca-blue transition-colors">Cursos</Link>
-          <Link href="/nosotros" className="text-gray-300 hover:text-pca-blue transition-colors">Nosotros</Link>
-          <Link href="/contacto" className="text-gray-300 hover:text-pca-blue transition-colors">Contacto</Link>
+        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+          <Link href="/cursos" className="hover:text-cyan-300 transition-colors">Cursos</Link>
+          <Link href="/nosotros" className="hover:text-cyan-300 transition-colors">Nosotros</Link>
+          <Link href="/contacto" className="hover:text-cyan-300 transition-colors">Contacto</Link>
         </div>
 
-        {/* ACCIONES (Derecha) */}
-        <div className="flex items-center gap-4">
-          
-          {/* NUEVO: Botón de Login (Solo texto o botón sutil) */}
-          <Link href="/login" className="hidden md:block text-white font-medium hover:text-pca-blue transition-colors">
+        <div className="flex items-center gap-3">
+          <Link href="/login" className="hidden md:inline-flex text-sm font-medium text-slate-200 hover:text-cyan-300 transition-colors">
             Ingresar
           </Link>
 
-          {/* Botón CTA - Ahora lleva a /registro */}
-          <div className="hidden md:block">
-            <Link href="/registro">
-              <Button variant="primary">
-                Inscribirse
-              </Button>
-            </Link>
-          </div>
+          <Link href="/registro" className="hidden md:inline-flex items-center justify-center px-5 py-2.5 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20 transition hover:brightness-110">
+            Inscribirse
+          </Link>
 
-          {/* Menú Móvil */}
-          <button 
-            onClick={toggleMenu} 
-            className="md:hidden p-2 text-gray-300 hover:text-white z-50 relative"
+          <button
+            onClick={toggleMenu}
+            className="md:hidden p-2 text-slate-200 hover:text-white z-50 relative"
             aria-label="Abrir menú"
           >
             {isMenuOpen ? (
@@ -68,45 +57,14 @@ export const Navbar = () => {
         </div>
       </div>
 
-      {/* MENÚ MÓVIL DESPLEGABLE */}
       {isMenuOpen && (
-        <div className="md:hidden absolute top-20 left-0 w-full bg-black border-b border-gray-800 shadow-xl z-50">
-          <div className="flex flex-col p-4 space-y-4 bg-black">
-            <Link 
-              href="/cursos" 
-              className="text-white hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800 font-medium"
-              onClick={closeMenu}
-            >
-              Cursos
-            </Link>
-            <Link 
-              href="/nosotros" 
-              className="text-white hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800 font-medium"
-              onClick={closeMenu}
-            >
-              Nosotros
-            </Link>
-            <Link 
-              href="/contacto" 
-              className="text-white hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800 font-medium"
-              onClick={closeMenu}
-            >
-              Contacto
-            </Link>
-            <Link 
-              href="/login" 
-              className="text-white font-medium hover:text-pca-blue transition-colors py-3 px-4 rounded-lg hover:bg-gray-800"
-              onClick={closeMenu}
-            >
-              Ingresar
-            </Link>
-            <div className="pt-2">
-              <Link href="/registro" onClick={closeMenu}>
-                <Button variant="primary" fullWidth>
-                  Inscribirse
-                </Button>
-              </Link>
-            </div>
+        <div className="md:hidden absolute top-20 left-0 w-full bg-slate-950/95 border-b border-white/10 shadow-2xl z-50 backdrop-blur-xl">
+          <div className="flex flex-col p-4 space-y-2">
+            <Link href="/cursos" className="text-white hover:text-cyan-300 transition-colors py-3 px-4 rounded-xl hover:bg-white/5" onClick={closeMenu}>Cursos</Link>
+            <Link href="/nosotros" className="text-white hover:text-cyan-300 transition-colors py-3 px-4 rounded-xl hover:bg-white/5" onClick={closeMenu}>Nosotros</Link>
+            <Link href="/contacto" className="text-white hover:text-cyan-300 transition-colors py-3 px-4 rounded-xl hover:bg-white/5" onClick={closeMenu}>Contacto</Link>
+            <Link href="/login" className="text-white hover:text-cyan-300 transition-colors py-3 px-4 rounded-xl hover:bg-white/5" onClick={closeMenu}>Ingresar</Link>
+            <Link href="/registro" onClick={closeMenu} className="mt-2 inline-flex items-center justify-center px-4 py-3 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 text-slate-950 font-bold">Inscribirse</Link>
           </div>
         </div>
       )}

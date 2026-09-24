@@ -144,109 +144,96 @@ export default function StudentDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#030712] text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pt-24">
-        
-        {/* HEADER */}
-        <header className="mb-10">
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,180,255,0.12),_transparent_25%),linear-gradient(180deg,#071421_0%,#091a2b_48%,#071421_100%)] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 pt-24 sm:px-6">
+        <header className="mb-8 rounded-[28px] border border-cyan-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.4)] backdrop-blur-xl">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-cyan-400 text-sm font-medium tracking-wide uppercase mb-1">Dashboard</p>
-              <h1 className="text-3xl lg:text-4xl font-bold text-white">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Dashboard</p>
+              <h1 className="text-3xl font-black tracking-tight text-white md:text-4xl">
                 Bienvenido, {displayName}
               </h1>
-              <p className="text-gray-500 mt-2">Continúa donde lo dejaste</p>
+              <p className="mt-2 text-sm text-slate-300">Continúa tu camino de aprendizaje con claridad y foco.</p>
             </div>
-            
-            {/* Stats Cards */}
-            <div className="flex gap-3 flex-wrap">
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-5 py-4 min-w-[110px]">
-                <div className="flex items-center gap-2 mb-1">
-                  <BookOpen className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs text-gray-500">Cursos</span>
+
+            <div className="flex flex-wrap gap-3">
+              <div className="min-w-[120px] rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
+                <div className="mb-2 flex items-center gap-2 text-xs text-slate-300">
+                  <BookOpen className="h-4 w-4 text-cyan-300" />
+                  Cursos
                 </div>
-                <p className="text-2xl font-bold text-white">{enrollments.length}</p>
+                <div className="text-2xl font-black text-white">{enrollments.length}</div>
               </div>
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-5 py-4 min-w-[110px]">
-                <div className="flex items-center gap-2 mb-1">
-                  <TrendingUp className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs text-gray-500">Progreso</span>
+
+              <div className="min-w-[120px] rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
+                <div className="mb-2 flex items-center gap-2 text-xs text-slate-300">
+                  <TrendingUp className="h-4 w-4 text-cyan-300" />
+                  Progreso
                 </div>
-                <p className="text-2xl font-bold text-white">{overallProgress}%</p>
+                <div className="text-2xl font-black text-white">{overallProgress}%</div>
               </div>
-              <div className="bg-[#0a0f1a] border border-gray-800/50 rounded-xl px-5 py-4 min-w-[110px] hidden sm:block">
-                <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span className="text-xs text-gray-500">Completados</span>
+
+              <div className="hidden min-w-[120px] rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4 sm:block">
+                <div className="mb-2 flex items-center gap-2 text-xs text-slate-300">
+                  <CheckCircle className="h-4 w-4 text-emerald-300" />
+                  Completados
                 </div>
-                <p className="text-2xl font-bold text-white">{completedCourses.length}</p>
+                <div className="text-2xl font-black text-white">{completedCourses.length}</div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* MAIN GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* CURSOS EN PROGRESO */}
-          <div className="lg:col-span-2 space-y-6">
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Play className="w-5 h-5 text-cyan-400" />
-                  Cursos en Progreso
-                </h2>
-                <span className="text-xs bg-cyan-500/10 text-cyan-400 px-3 py-1 rounded-full font-medium">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="space-y-6 lg:col-span-2">
+            <section className="rounded-[28px] border border-cyan-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
+                    <Play className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Tu aprendizaje</h2>
+                </div>
+                <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
                   {inProgressCourses.length} activos
                 </span>
               </div>
 
               {inProgressCourses.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <BookOpen className="w-8 h-8 text-gray-600" />
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 px-6 py-12 text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-800/80 text-slate-400">
+                    <BookOpen className="h-8 w-8" />
                   </div>
-                  <h3 className="text-gray-300 font-medium mb-2">No tienes cursos activos</h3>
-                  <p className="text-gray-500 text-sm mb-4">Explora nuestro catálogo y comienza a aprender</p>
-                  <Link 
-                    href="/dashboard/student/courses" 
-                    className="inline-flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black font-medium px-4 py-2 rounded-lg transition-colors text-sm"
-                  >
-                    Ver cursos <ChevronRight className="w-4 h-4" />
+                  <h3 className="text-lg font-semibold text-white">Aún no tienes cursos activos</h3>
+                  <p className="mt-2 text-sm text-slate-400">Explora el catálogo y empieza con tu primer curso.</p>
+                  <Link href="/dashboard/student/courses" className="mt-5 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 px-5 py-2.5 text-sm font-bold text-slate-950">
+                    Ver cursos <ChevronRight className="h-4 w-4" />
                   </Link>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {inProgressCourses.map((enrollment: any) => (
-                    <Link 
-                      key={enrollment.id} 
-                      href={`/dashboard/student/course/${enrollment.course_id}/overview`}
-                      className="block group"
-                    >
-                      <div className="bg-[#030712] border border-gray-800 hover:border-cyan-500/40 rounded-xl p-4 transition-all duration-200">
+                    <Link key={enrollment.id} href={`/dashboard/student/course/${enrollment.course_id}/overview`} className="block group">
+                      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 transition hover:border-cyan-400/30 hover:bg-slate-900">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="text-lg font-bold text-white">
-                              {enrollment.courses?.title?.charAt(0) || 'C'}
-                            </span>
+                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-sky-500 font-black text-slate-950">
+                            {enrollment.courses?.title?.charAt(0) || 'C'}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-white group-hover:text-cyan-400 transition-colors truncate">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate text-base font-semibold text-white group-hover:text-cyan-300">
                               {enrollment.courses?.title || 'Curso'}
                             </h3>
-                            <div className="flex items-center gap-4 mt-2">
-                              <div className="flex-1">
-                                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all"
-                                    style={{ width: `${enrollment.progress || 0}%` }}
-                                  />
-                                </div>
+                            <div className="mt-3 flex items-center gap-3">
+                              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500"
+                                  style={{ width: `${enrollment.progress || 0}%` }}
+                                />
                               </div>
-                              <span className="text-xs text-cyan-400 font-medium w-10">{enrollment.progress || 0}%</span>
+                              <span className="w-10 text-right text-xs font-semibold text-cyan-300">{enrollment.progress || 0}%</span>
                             </div>
                           </div>
-                          <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-cyan-400 transition-colors" />
+                          <ChevronRight className="h-5 w-5 text-slate-500 transition group-hover:text-cyan-300" />
                         </div>
                       </div>
                     </Link>
@@ -255,54 +242,49 @@ export default function StudentDashboard() {
               )}
             </section>
 
-            {/* TAREAS PENDIENTES */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Target className="w-5 h-5 text-orange-400" />
-                  Tareas Pendientes
-                </h2>
+            <section className="rounded-[28px] border border-orange-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
+                    <Target className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Tareas pendientes</h2>
+                </div>
                 {pendingTasks.length > 0 && (
-                  <span className="text-xs bg-orange-500/10 text-orange-400 px-3 py-1 rounded-full">
+                  <span className="rounded-full border border-orange-400/20 bg-orange-500/10 px-3 py-1 text-xs font-medium text-orange-300">
                     {pendingTasks.length}
                   </span>
                 )}
               </div>
 
               {pendingTasks.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <CheckCircle className="w-7 h-7 text-green-500" />
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 px-6 py-10 text-center">
+                  <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-300">
+                    <CheckCircle className="h-7 w-7" />
                   </div>
-                  <p className="text-gray-400 text-sm">¡Estás al día! No tienes tareas pendientes</p>
+                  <p className="text-sm text-slate-300">¡Todo está en orden! No tienes tareas pendientes.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {pendingTasks.slice(0, 5).map((task: any, idx: number) => (
-                    <Link 
-                      key={task.id || idx} 
-                      href={`/dashboard/student/tasks/${task.id}`}
-                      className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-orange-500/30 transition-colors"
-                    >
-                      <div className="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-5 h-5 text-orange-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium text-white truncate">{task.title}</h4>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">
-                          {task.courses?.title || 'Curso'}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className="text-xs bg-orange-500/10 text-orange-400 px-2.5 py-1 rounded-full font-medium">
-                          {task.max_points} pts
-                        </span>
-                        {task.due_date && (
-                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1 justify-end">
-                            <Clock className="w-3 h-3" />
-                            {new Date(task.due_date).toLocaleDateString('es-ES')}
-                          </p>
-                        )}
+                  {pendingTasks.slice(0, 4).map((task: any, idx: number) => (
+                    <Link key={task.id || idx} href={`/dashboard/student/tasks/${task.id}`} className="block">
+                      <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 transition hover:border-orange-400/30 hover:bg-slate-900">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-white">{task.title}</div>
+                          <div className="mt-1 text-xs text-slate-400">{task.courses?.title || 'Curso'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="rounded-full bg-orange-500/10 px-2.5 py-1 text-[10px] font-bold text-orange-300">{task.max_points} pts</div>
+                          {task.due_date && (
+                            <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-slate-400">
+                              <Clock className="h-3 w-3" />
+                              {new Date(task.due_date).toLocaleDateString('es-ES')}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </Link>
                   ))}
@@ -310,59 +292,51 @@ export default function StudentDashboard() {
               )}
             </section>
 
-            {/* EVALUACIONES PENDIENTES */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <ClipboardList className="w-5 h-5 text-purple-400" />
-                  Exámenes Pendientes
-                </h2>
+            <section className="rounded-[28px] border border-violet-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Exámenes</h2>
+                </div>
                 {pendingExams.length > 0 && (
-                  <span className="text-xs bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full">
+                  <span className="rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-300">
                     {pendingExams.length}
                   </span>
                 )}
               </div>
 
               {pendingExams.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <CheckCircle className="w-7 h-7 text-green-500" />
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 px-6 py-10 text-center">
+                  <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-300">
+                    <CheckCircle className="h-7 w-7" />
                   </div>
-                  <p className="text-gray-400 text-sm">¡No tienes exámenes pendientes!</p>
+                  <p className="text-sm text-slate-300">No tienes evaluaciones pendientes.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {pendingExams.slice(0, 4).map((exam: any, idx: number) => (
-                    <Link 
-                      key={exam.id || idx} 
-                      href={`/dashboard/student/exam/${exam.id}`}
-                      className="flex items-center gap-4 bg-[#030712] border border-gray-800 rounded-xl p-4 hover:border-purple-500/30 transition-colors"
-                    >
-                      <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <ClipboardList className="w-5 h-5 text-purple-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium text-white truncate">{exam.title}</h4>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">
-                          {exam.courses?.title || 'Curso'}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                          exam.scope === 'topic_quiz' ? 'bg-blue-500/10 text-blue-400' :
-                          exam.scope === 'unit_exam' ? 'bg-purple-500/10 text-purple-400' :
-                          'bg-orange-500/10 text-orange-400'
-                        }`}>
-                          {exam.scope === 'topic_quiz' ? 'Quiz' :
-                           exam.scope === 'unit_exam' ? 'Examen' : 'Final'}
-                        </span>
-                        {exam.time_limit_minutes && (
-                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1 justify-end">
-                            <Clock className="w-3 h-3" />
-                            {exam.time_limit_minutes} min
-                          </p>
-                        )}
+                    <Link key={exam.id || idx} href={`/dashboard/student/exam/${exam.id}`} className="block">
+                      <div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 transition hover:border-violet-400/30 hover:bg-slate-900">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                          <ClipboardList className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-white">{exam.title}</div>
+                          <div className="mt-1 text-xs text-slate-400">{exam.courses?.title || 'Curso'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${exam.scope === 'topic_quiz' ? 'bg-blue-500/10 text-blue-300' : exam.scope === 'unit_exam' ? 'bg-violet-500/10 text-violet-300' : 'bg-orange-500/10 text-orange-300'}`}>
+                            {exam.scope === 'topic_quiz' ? 'Quiz' : exam.scope === 'unit_exam' ? 'Examen' : 'Final'}
+                          </div>
+                          {exam.time_limit_minutes && (
+                            <div className="mt-2 flex items-center justify-end gap-1 text-[10px] text-slate-400">
+                              <Clock className="h-3 w-3" />
+                              {exam.time_limit_minutes} min
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </Link>
                   ))}
@@ -371,120 +345,116 @@ export default function StudentDashboard() {
             </section>
           </div>
 
-          {/* SIDEBAR */}
           <aside className="space-y-6">
-            
-            {/* ESTADÍSTICAS */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-cyan-400" />
-                Estadísticas
-              </h3>
-              
+            <section className="rounded-[28px] border border-cyan-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
+                  <BarChart3 className="h-5 w-5" />
+                </div>
+                <h3 className="text-xl font-bold text-white">Estadísticas</h3>
+              </div>
+
               <div className="space-y-4">
-                <div className="flex items-center justify-between py-3 border-b border-gray-800/50">
-                  <span className="text-gray-400 text-sm">Promedio</span>
-                  <span className="text-white font-semibold">{stats?.averageGrade || 85}%</span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                  <span className="text-sm text-slate-400">Promedio</span>
+                  <span className="text-base font-bold text-white">{stats?.averageGrade || 85}%</span>
                 </div>
-                <div className="flex items-center justify-between py-3 border-b border-gray-800/50">
-                  <span className="text-gray-400 text-sm">Lecciones</span>
-                  <span className="text-white font-semibold">{stats?.completedLessons || 12}</span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                  <span className="text-sm text-slate-400">Lecciones</span>
+                  <span className="text-base font-bold text-white">{stats?.completedLessons || 12}</span>
                 </div>
-                <div className="flex items-center justify-between py-3 border-b border-gray-800/50">
-                  <span className="text-gray-400 text-sm">Horas de estudio</span>
-                  <span className="text-white font-semibold">{stats?.studyHours || 24}h</span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                  <span className="text-sm text-slate-400">Horas</span>
+                  <span className="text-base font-bold text-white">{stats?.studyHours || 24}h</span>
                 </div>
-                <div className="flex items-center justify-between py-3">
-                  <span className="text-gray-400 text-sm">Racha</span>
-                  <span className="text-cyan-400 font-semibold">🔥 {stats?.streak || 5} días</span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                  <span className="text-sm text-slate-400">Racha</span>
+                  <span className="text-base font-bold text-cyan-300">🔥 {stats?.streak || 5} días</span>
                 </div>
               </div>
             </section>
 
-            {/* LOGROS */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-                <Award className="w-5 h-5 text-yellow-400" />
-                Logros
-              </h3>
-              
+            <section className="rounded-[28px] border border-yellow-400/20 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-yellow-500/10 text-yellow-300">
+                  <Award className="h-5 w-5" />
+                </div>
+                <h3 className="text-xl font-bold text-white">Logros</h3>
+              </div>
+
               <div className="space-y-3">
                 {completedCourses.length > 0 ? (
                   completedCourses.slice(0, 3).map((course: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3 bg-[#030712] rounded-lg p-3 border border-gray-800/50">
-                      <div className="w-9 h-9 bg-yellow-500/10 rounded-full flex items-center justify-center flex-shrink-0">
-                        <Trophy className="w-4 h-4 text-yellow-400" />
+                    <div key={idx} className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-yellow-500/10 text-yellow-300">
+                        <Trophy className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{course.courses?.title || 'Curso'}</p>
-                        <p className="text-xs text-gray-500">Completado</p>
+                        <div className="truncate text-sm font-semibold text-white">{course.courses?.title || 'Curso'}</div>
+                        <div className="text-xs text-slate-400">Completado</div>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-6">
-                    <Trophy className="w-10 h-10 text-gray-700 mx-auto mb-2" />
-                    <p className="text-gray-500 text-sm">Completa cursos para logros</p>
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-10 text-center">
+                    <Trophy className="mx-auto mb-2 h-10 w-10 text-slate-500" />
+                    <p className="text-sm text-slate-400">Completa cursos para desbloquear logros.</p>
                   </div>
                 )}
               </div>
             </section>
 
-            {/* NOTIFICACIONES */}
-            <section className="bg-[#0a0f1a] border border-gray-800/50 rounded-2xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-                <Bell className="w-5 h-5 text-cyan-400" />
-                Notificaciones
-                {sidebarNotifications.filter(n => !n.is_read).length > 0 && (
-                  <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 ml-auto">
-                    {sidebarNotifications.filter(n => !n.is_read).length}
+            <section className="rounded-[28px] border border-slate-700 bg-slate-950/75 p-6 shadow-[0_20px_60px_rgba(8,19,33,0.35)] backdrop-blur-xl">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
+                    <Bell className="h-5 w-5" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Notificaciones</h3>
+                </div>
+                {sidebarNotifications.filter((n) => !n.is_read).length > 0 && (
+                  <span className="rounded-full bg-red-500 px-2 py-1 text-[10px] font-bold text-white">
+                    {sidebarNotifications.filter((n) => !n.is_read).length}
                   </span>
                 )}
-              </h3>
-              
+              </div>
+
               {notifsLoading ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="h-14 bg-gray-800/50 rounded-lg animate-pulse" />
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-16 animate-pulse rounded-2xl bg-slate-800/60" />
                   ))}
                 </div>
               ) : sidebarNotifications.length > 0 ? (
                 <div className="space-y-3">
-                  {sidebarNotifications.map(notif => (
+                  {sidebarNotifications.map((notif) => (
                     <Link
                       key={notif.id}
                       href={notif.link || '/dashboard/student/tasks'}
-                      className={`block p-3 rounded-lg border transition-colors ${
-                        notif.is_read
-                          ? 'border-gray-800/30 bg-gray-900/30 hover:bg-gray-800/40'
-                          : 'border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10'
-                      }`}
+                      className={`block rounded-2xl border p-3 transition ${notif.is_read ? 'border-slate-800 bg-slate-900/40 hover:bg-slate-900' : 'border-cyan-400/25 bg-cyan-500/5 hover:bg-cyan-500/10'}`}
                     >
-                      <p className={`text-sm font-medium ${notif.is_read ? 'text-gray-400' : 'text-white'}`}>
-                        {notif.title}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notif.message}</p>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <div className={`text-sm font-semibold ${notif.is_read ? 'text-slate-300' : 'text-white'}`}>{notif.title}</div>
+                      <div className="mt-1 text-xs text-slate-400">{notif.message}</div>
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-slate-500">
                         {new Date(notif.created_at).toLocaleDateString('es-ES', {
-                          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit'
                         })}
-                      </p>
+                      </div>
                     </Link>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-6">
-                  <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Bell className="w-6 h-6 text-gray-600" />
-                  </div>
-                  <p className="text-gray-500 text-sm">Sin notificaciones</p>
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-10 text-center">
+                  <Bell className="mx-auto mb-2 h-8 w-8 text-slate-500" />
+                  <p className="text-sm text-slate-400">Sin notificaciones por ahora.</p>
                 </div>
               )}
             </section>
-
           </aside>
         </div>
-
       </div>
     </div>
   )
